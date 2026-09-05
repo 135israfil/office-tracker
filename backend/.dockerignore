@@ -1,0 +1,35 @@
+# Mirrors the relevant entries from the root .gitignore, scoped to what can
+# appear under backend/. Keeps build context small and avoids ever baking
+# local/dev artifacts into the image.
+
+# Python
+__pycache__/
+.ruff_cache/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Django
+staticfiles/*
+!staticfiles/.gitkeep
+media/
+*.sqlite3
+
+# Environment (defense in depth - .env isn't normally under backend/)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# VCS
+.git/

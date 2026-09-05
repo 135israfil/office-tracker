@@ -1,0 +1,22 @@
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "build", "dist", "installer"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = [
+    "S101",  # assert is how pytest works
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into private state deliberately (config paths, URL building).
+"tests/*" = ["S105", "S106", "S107", "SLF001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"

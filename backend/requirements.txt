@@ -1,0 +1,14 @@
+# Pinned to exact versions, not ranges, for this trio: the production target runs
+# PostgreSQL 10.23, and Django 4.0 is the last release series that supports it (4.1
+# dropped PostgreSQL 10; 4.2 was the first to speak psycopg3, so 4.0 needs psycopg2
+# instead). A loose range here is one routine `pip install -U` away from silently
+# reintroducing a NotSupportedError against the real database.
+Django==4.0.10
+djangorestframework==3.14.0
+psycopg2-binary>=2.9,<3
+python-dotenv>=1.0,<2
+django-cors-headers>=4.4,<5
+whitenoise>=6.7,<7
+gunicorn>=23.0,<24
+openpyxl>=3.1,<4
+argon2-cffi>=23.1,<26

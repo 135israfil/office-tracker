@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+.ruff_cache/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Django
+staticfiles/*
+!staticfiles/.gitkeep
+media/
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Desktop agent
+desktop-agent/build/
+desktop-agent/dist/
+# PyInstaller drops a generated .spec beside whatever it is told to build. The one in
+# installer/ is hand-written and is part of the build, so it is kept.
+*.spec
+!desktop-agent/installer/agent.spec
+# Generated from agent/version.py at build time, so the exe's file properties can never
+# disagree with the version the agent reports to the server.
+desktop-agent/installer/version_info.txt
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# AI tooling (local state, not project source)
+.claude/
+.playwright-mcp/
+.serena/
