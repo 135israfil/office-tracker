@@ -16,7 +16,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from activities.models import Activity, ActivityType
-from activities.queries import build_timeline, overlap_seconds, summarise
+from activities.queries import build_timeline, minute_buckets, overlap_seconds, summarise
 from attendance.models import AppSettings, Attendance, AttendanceStatus
 from computers.models import ComputerStatus
 from core.dashboards import attendance_counts, computer_counts, employee_roster
@@ -183,6 +183,54 @@ class TestSummarise:
         result = summarise([], self.start, self.end)
         assert result["pc_on_seconds"] == 0
         assert result["top_applications"] == []
+
+
+class TestMinuteBuckets:
+    def setup_method(self):
+        self.start = dt.datetime(2026, 8, 18, 0, 0, tzinfo=dt.timezone.utc)
+        self.end = self.start + dt.timedelta(days=1)
+
+    def at(self, hour, minute=0):
+        return self.start + dt.timedelta(hours=hour, minutes=minute)
+
+    def test_a_day_with_nothing_recorded_is_all_off(self):
+        buckets = minute_buckets([], self.start, self.end)
+        assert len(buckets) == 24 * 60
+        assert set(buckets) == {"O"}
+
+    def test_active_and_idle_paint_over_the_pc_on_baseline(self):
+        buckets = minute_buckets(
+            [
+                Fake(ActivityType.PC_ON, self.at(9), self.at(18)),
+                Fake(ActivityType.ACTIVE, self.at(9), self.at(12)),
+                Fake(ActivityType.IDLE, self.at(12), self.at(13)),
+            ],
+            self.start,
+            self.end,
+        )
+        # PC on but neither active nor idle (13:00-18:00) stays "O", same as off — the
+        # UI only draws three states.
+        assert buckets[9 * 60] == "A"
+        assert buckets[11 * 60 + 59] == "A"
+        assert buckets[12 * 60] == "I"
+        assert buckets[12 * 60 + 59] == "I"
+        assert buckets[13 * 60] == "O"
+        assert buckets[8 * 60 + 59] == "O"
+
+    def test_a_session_ending_on_a_minute_boundary_does_not_paint_the_next_minute(self):
+        buckets = minute_buckets(
+            [Fake(ActivityType.ACTIVE, self.at(9, 0), self.at(9, 1))], self.start, self.end
+        )
+        assert buckets[9 * 60] == "A"
+        assert buckets[9 * 60 + 1] == "O"
+
+    def test_an_open_session_counts_up_to_now(self):
+        now = self.at(10, 30)
+        buckets = minute_buckets(
+            [Fake(ActivityType.ACTIVE, self.at(9), None)], self.start, self.end, now=now
+        )
+        assert buckets[10 * 60 + 29] == "A"
+        assert buckets[10 * 60 + 31] == "O"
 
 
 class TestTimeline:
@@ -417,6 +465,8 @@ class TestDashboardApi:
         assert activity["top_applications"][0]["name"] == "Visual Studio Code"
         assert activity["top_websites"][0]["name"] == "github.com"
         assert activity["timeline"]["entries"][0]["label"] == "PC started"
+        assert len(activity["minute_buckets"]) == 24 * 60
+        assert activity["minute_buckets"][9 * 60 + 1] == "A"
 
     def test_every_payload_carries_the_office_timezone(self, admin_client, office):
         """The pages render clock times, and they must not drift with the viewer.

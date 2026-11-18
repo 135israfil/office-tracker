@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import logging
+import queue
 import threading
 
 log = logging.getLogger(__name__)
@@ -139,6 +140,85 @@ def _raise_above_everything(window):
     window.focus_force()
 
 
+class _UiThread:
+    """The one thread that ever touches Tkinter, with one persistent interpreter.
+
+    prompt_for_code/_show_status/_enroll used to each create and destroy their own
+    tk.Tk() wherever they happened to be called from — which, for the tray menu, is
+    synchronously inside pystray's own native Win32 message loop, on pystray's own
+    thread. Two toolkits each running their own message pump on the same thread is
+    fragile: the dialog could end up genuinely active per Windows (real coloured title
+    bar, blinking text cursor) while neither keystrokes nor button clicks ever reached a
+    widget, because pystray's loop — not Tk's — was still the one pumping that thread's
+    messages. Giving Tk one dedicated thread with its own mainloop() running
+    continuously, and marshalling every dialog onto it through a thread-safe queue
+    (`run`, below), removes the conflict entirely: Tk's event loop is never nested
+    inside a foreign one, only ever inside itself, which is the normal and fully
+    supported way a modal dialog's own wait_window() has always worked.
+    """
+
+    def __init__(self):
+        self.root = None
+        self._queue = queue.Queue()
+        ready = threading.Event()
+        threading.Thread(target=self._run, args=(ready,), name="tray-ui", daemon=True).start()
+        ready.wait()
+
+    def _run(self, ready):
+        import tkinter as tk
+
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self._poll()
+        ready.set()
+        self.root.mainloop()
+
+    def _poll(self):
+        # Runs only on this thread: the first call from _run, and every later one
+        # scheduled via root.after from inside this same method. That is what makes it
+        # safe to run arbitrary builder() callbacks here — nothing outside this thread
+        # ever touches Tk directly, it only ever hands work to the queue below.
+        while True:
+            try:
+                task = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            task()
+        self.root.after(30, self._poll)
+
+    def run(self, builder):
+        """Run builder(root) on the UI thread; block the caller until it returns."""
+        result = []
+        error = []
+        done = threading.Event()
+
+        def task():
+            try:
+                result.append(builder(self.root))
+            except Exception as exc:  # noqa: BLE001 - re-raised on the caller's thread below
+                error.append(exc)
+            finally:
+                done.set()
+
+        self._queue.put(task)
+        done.wait()
+        if error:
+            raise error[0]
+        return result[0]
+
+
+_ui_thread = None
+_ui_thread_lock = threading.Lock()
+
+
+def _ui() -> _UiThread:
+    global _ui_thread
+    with _ui_thread_lock:
+        if _ui_thread is None:
+            _ui_thread = _UiThread()
+    return _ui_thread
+
+
 def prompt_for_code(parent_title="Office Tracker") -> str | None:
     """Ask for an enrollment code with a small hand-built dialog.
 
@@ -146,96 +226,84 @@ def prompt_for_code(parent_title="Office Tracker") -> str | None:
     reliable. tkinter itself rather than Qt or wx — one small dialog, used once per
     machine, is not worth thirty megabytes in the installer.
     """
-    import tkinter as tk
 
-    root = tk.Tk()
-    root.withdraw()
+    def build(root):
+        import tkinter as tk
 
-    dialog = tk.Toplevel(root)
-    dialog.title(parent_title)
-    dialog.resizable(False, False)
+        dialog = tk.Toplevel(root)
+        dialog.title(parent_title)
+        dialog.resizable(False, False)
 
-    tk.Label(dialog, text="Enter the enrollment code from your administrator:").pack(
-        padx=16, pady=(16, 8)
-    )
-    entry = tk.Entry(dialog, width=32)
-    entry.pack(padx=16, pady=(0, 8))
+        tk.Label(dialog, text="Enter the enrollment code from your administrator:").pack(
+            padx=16, pady=(16, 8)
+        )
+        entry = tk.Entry(dialog, width=32)
+        entry.pack(padx=16, pady=(0, 8))
 
-    result = {"code": None}
+        result = {"code": None}
 
-    def submit(*_):
-        result["code"] = entry.get().strip() or None
-        dialog.destroy()
+        def submit(*_):
+            result["code"] = entry.get().strip() or None
+            dialog.destroy()
 
-    def cancel(*_):
-        dialog.destroy()
+        def cancel(*_):
+            dialog.destroy()
 
-    buttons = tk.Frame(dialog)
-    buttons.pack(pady=(0, 16))
-    tk.Button(buttons, text="OK", command=submit, width=10, default="active").pack(
-        side="left", padx=4
-    )
-    tk.Button(buttons, text="Cancel", command=cancel, width=10).pack(side="left", padx=4)
+        buttons = tk.Frame(dialog)
+        buttons.pack(pady=(0, 16))
+        tk.Button(buttons, text="OK", command=submit, width=10, default="active").pack(
+            side="left", padx=4
+        )
+        tk.Button(buttons, text="Cancel", command=cancel, width=10).pack(side="left", padx=4)
 
-    dialog.bind("<Return>", submit)
-    dialog.bind("<Escape>", cancel)
-    dialog.protocol("WM_DELETE_WINDOW", cancel)
+        dialog.bind("<Return>", submit)
+        dialog.bind("<Escape>", cancel)
+        dialog.protocol("WM_DELETE_WINDOW", cancel)
 
-    try:
-        _raise_above_everything(dialog)
-        # Only now, with the window genuinely visible and holding real OS focus, does
-        # setting focus on the entry actually stick — doing this earlier (as it used to)
-        # set Tk's internal focus record on a widget in a window Windows had not yet
-        # handed focus to.
-        entry.focus_set()
-        dialog.grab_set()
-        root.wait_window(dialog)
-    finally:
-        # A fresh tk.Tk() is created per call rather than one shared root (see module
-        # note), which makes this the one thing that must never be skipped: if anything
-        # above raises — grab_set() has already done so once, with "grab failed: another
-        # application has grab" — root.destroy() at the end of the happy path never runs,
-        # and this interpreter, with its Windows message-hook and window-class
-        # registration, leaks for the rest of the process's life. Every dialog shown after
-        # that leak can end up genuinely active per Windows (real coloured title bar) while
-        # none of its input — keys or clicks — actually reaches a widget, because the
-        # stale interpreter is still attached to the same thread's message queue. This is
-        # not theoretical: it is what actually happened the first time grab_set() failed.
-        with contextlib.suppress(Exception):
-            root.destroy()
-    return result["code"]
+        try:
+            _raise_above_everything(dialog)
+            # Only now, with the window genuinely visible and holding real OS focus, does
+            # setting focus on the entry actually stick — doing this earlier (as it used
+            # to) set Tk's internal focus record on a widget in a window Windows had not
+            # yet handed focus to.
+            entry.focus_set()
+            dialog.grab_set()
+            root.wait_window(dialog)
+        finally:
+            with contextlib.suppress(Exception):
+                dialog.destroy()
+        return result["code"]
+
+    return _ui().run(build)
 
 
 def show_message(title: str, message: str):
-    import tkinter as tk
+    def build(root):
+        import tkinter as tk
 
-    root = tk.Tk()
-    root.withdraw()
+        dialog = tk.Toplevel(root)
+        dialog.title(title)
+        dialog.resizable(False, False)
 
-    dialog = tk.Toplevel(root)
-    dialog.title(title)
-    dialog.resizable(False, False)
+        tk.Label(dialog, text=message, justify="left").pack(padx=20, pady=(16, 8))
 
-    tk.Label(dialog, text=message, justify="left").pack(padx=20, pady=(16, 8))
+        def close(*_):
+            dialog.destroy()
 
-    def close(*_):
-        dialog.destroy()
+        tk.Button(dialog, text="OK", command=close, width=10, default="active").pack(pady=(0, 16))
+        dialog.bind("<Return>", close)
+        dialog.bind("<Escape>", close)
+        dialog.protocol("WM_DELETE_WINDOW", close)
 
-    tk.Button(dialog, text="OK", command=close, width=10, default="active").pack(pady=(0, 16))
-    dialog.bind("<Return>", close)
-    dialog.bind("<Escape>", close)
-    dialog.protocol("WM_DELETE_WINDOW", close)
+        try:
+            _raise_above_everything(dialog)
+            dialog.grab_set()
+            root.wait_window(dialog)
+        finally:
+            with contextlib.suppress(Exception):
+                dialog.destroy()
 
-    try:
-        _raise_above_everything(dialog)
-        dialog.grab_set()
-        root.wait_window(dialog)
-    finally:
-        # See prompt_for_code's matching finally: this guarantees the interpreter is
-        # torn down even if grab_set() or anything above it raises, so a failure here
-        # cannot leak stale interpreter state into the next dialog this process shows.
-        with contextlib.suppress(Exception):
-            root.destroy()
+    _ui().run(build)
 
 
 class Tray:

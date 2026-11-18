@@ -38,6 +38,8 @@ TOP_N = 5
 # how many entries were dropped rather than pretending it is complete.
 MAX_TIMELINE_ENTRIES = 200
 
+MINUTES_PER_DAY = 24 * 60
+
 
 def day_window(day: dt.date, settings_obj=None) -> tuple[dt.datetime, dt.datetime]:
     """The UTC instants bounding one office-local calendar day.
@@ -116,6 +118,40 @@ def summarise(sessions, window_start, window_end, now=None) -> dict:
         "other_website_seconds": other_website_seconds,
         "session_count": len(sessions),
     }
+
+
+def minute_buckets(sessions, window_start, window_end, now=None) -> list[str]:
+    """A one-letter state per minute of the day, for the activity-page strip.
+
+    "O" (off), "A" (active), "I" (idle) — painted in that order, so ACTIVE/IDLE always
+    wins over PC_ON's own bare "on" baseline, and a minute no PC_ON session reaches stays
+    "O" too: the UI only draws these three states, so "on but unaccounted for" and
+    "off" would be indistinguishable anyway.
+    """
+    now = now or timezone.now()
+    buckets = ["O"] * MINUTES_PER_DAY
+
+    def paint(session_list, code):
+        for entry in session_list:
+            start = max(entry.start_time, window_start)
+            end = min(entry.end_time or now, window_end)
+            if end <= start:
+                continue
+            first = int((start - window_start).total_seconds() // 60)
+            # -1 second before dividing makes the end exclusive: a session ending
+            # exactly on a minute boundary must not also paint that next minute.
+            last = int((end - window_start).total_seconds() - 1) // 60
+            for minute in range(max(first, 0), min(last, MINUTES_PER_DAY - 1) + 1):
+                buckets[minute] = code
+
+    by_type: dict[str, list] = {}
+    for session in sessions:
+        by_type.setdefault(session.activity_type, []).append(session)
+
+    paint(by_type.get(ActivityType.PC_ON, []), "O")
+    paint(by_type.get(ActivityType.ACTIVE, []), "A")
+    paint(by_type.get(ActivityType.IDLE, []), "I")
+    return buckets
 
 
 def build_timeline(sessions, window_start, window_end, now=None) -> dict:
@@ -202,5 +238,6 @@ def activity_day(employee, day: dt.date, settings_obj=None, now=None) -> dict:
 
     summary = summarise(sessions, window_start, window_end, now)
     summary["timeline"] = build_timeline(sessions, window_start, window_end, now)
+    summary["minute_buckets"] = minute_buckets(sessions, window_start, window_end, now)
     summary["date"] = day
     return summary

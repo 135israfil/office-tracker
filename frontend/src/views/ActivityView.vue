@@ -19,6 +19,30 @@ const activity = computed(() => summary.value?.activity ?? null);
 const attendance = computed(() => summary.value?.attendance ?? null);
 const timezone = computed(() => summary.value?.timezone ?? null);
 
+// Matches the agent's own gray/green/amber vocabulary (desktop-agent/agent/tray.py's
+// COLOURS) so "off/active/idle" reads the same way in the tray icon and the web report.
+const STRIP_COLOR = { O: "var(--border-strong)", A: "var(--ok)", I: "var(--warn)" };
+const HOUR_LABELS = Array.from({ length: 13 }, (_, i) => `${String(i * 2).padStart(2, "0")}:00`);
+
+// 1440 per-minute states compress to a handful of colour stops — a CSS gradient draws a
+// crisp full-width strip without creating 1440 DOM nodes.
+const timelineGradient = computed(() => {
+  const buckets = activity.value?.minute_buckets;
+  if (!buckets?.length) return null;
+  const total = buckets.length;
+  const stops = [];
+  let i = 0;
+  while (i < total) {
+    const code = buckets[i];
+    let j = i;
+    while (j < total && buckets[j] === code) j++;
+    const color = STRIP_COLOR[code] ?? STRIP_COLOR.O;
+    stops.push(`${color} ${(i / total) * 100}%`, `${color} ${(j / total) * 100}%`);
+    i = j;
+  }
+  return `linear-gradient(to right, ${stops.join(", ")})`;
+});
+
 async function loadEmployees() {
   const list = await api.listEmployees({ status: "ACTIVE" });
   employees.value = list.results ?? list;
@@ -117,82 +141,101 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="two-up">
-        <div>
-          <h4>Top applications</h4>
-          <ul class="bars">
-            <li
-              v-for="app in activity.top_applications"
-              :key="app.name"
-            >
-              <span>{{ app.name }}</span>
-              <strong>{{ duration(app.seconds) }}</strong>
-            </li>
-            <li v-if="activity.other_application_seconds">
-              <span class="muted">Other</span>
-              <strong>{{ duration(activity.other_application_seconds) }}</strong>
-            </li>
-            <li
-              v-if="!activity.top_applications.length"
-              class="muted"
-            >
-              No application activity.
-            </li>
-          </ul>
-        </div>
-
-        <div>
-          <h4>Top websites</h4>
-          <ul class="bars">
-            <li
-              v-for="site in activity.top_websites"
-              :key="site.name"
-            >
-              <span>{{ site.name }}</span>
-              <strong>{{ duration(site.seconds) }}</strong>
-            </li>
-            <li v-if="activity.other_website_seconds">
-              <span class="muted">Other</span>
-              <strong>{{ duration(activity.other_website_seconds) }}</strong>
-            </li>
-            <li
-              v-if="!activity.top_websites.length"
-              class="muted"
-            >
-              No website activity.
-            </li>
-          </ul>
-        </div>
+      <h4>24-hour activity</h4>
+      <div class="legend">
+        <span><i class="swatch off" />Off</span>
+        <span><i class="swatch active" />Active</span>
+        <span><i class="swatch idle" />Idle</span>
+      </div>
+      <div
+        v-if="timelineGradient"
+        class="timeline-strip"
+        :style="{ background: timelineGradient }"
+      />
+      <p
+        v-else
+        class="muted"
+      >
+        Nothing recorded for this day.
+      </p>
+      <div class="timeline-ticks">
+        <span
+          v-for="label in HOUR_LABELS"
+          :key="label"
+        >{{ label }}</span>
       </div>
 
-      <h4>Timeline</h4>
-      <ol class="timeline">
-        <li
-          v-for="(entry, index) in activity.timeline.entries"
-          :key="index"
-        >
-          <span class="when">{{ clockTime(entry.at, timezone) }}</span>
-          <span>
-            {{ entry.label }}
-            <span
-              v-if="entry.detail"
-              class="muted"
-            >/ {{ entry.detail }}</span>
-          </span>
-        </li>
-        <li
-          v-if="!activity.timeline.entries.length"
-          class="muted"
-        >
-          Nothing recorded for this day.
-        </li>
-      </ol>
-      <p
-        v-if="activity.timeline.truncated"
-        class="muted small"
-      >
-        {{ activity.timeline.truncated }} further entries not shown.
-      </p>
+      <div class="two-up">
+        <div>
+          <h4>Applications</h4>
+          <table class="activity-table">
+            <thead>
+              <tr>
+                <th>Application</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="app in activity.top_applications"
+                :key="app.name"
+              >
+                <td>{{ app.name }}</td>
+                <td>{{ duration(app.seconds) }}</td>
+              </tr>
+              <tr v-if="activity.other_application_seconds">
+                <td class="muted">
+                  Other
+                </td>
+                <td>{{ duration(activity.other_application_seconds) }}</td>
+              </tr>
+              <tr v-if="!activity.top_applications.length && !activity.other_application_seconds">
+                <td
+                  colspan="2"
+                  class="muted"
+                >
+                  No application activity.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h4>Websites</h4>
+          <table class="activity-table">
+            <thead>
+              <tr>
+                <th>Website</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="site in activity.top_websites"
+                :key="site.name"
+              >
+                <td>{{ site.name }}</td>
+                <td>{{ duration(site.seconds) }}</td>
+              </tr>
+              <tr v-if="activity.other_website_seconds">
+                <td class="muted">
+                  Other
+                </td>
+                <td>{{ duration(activity.other_website_seconds) }}</td>
+              </tr>
+              <tr v-if="!activity.top_websites.length && !activity.other_website_seconds">
+                <td
+                  colspan="2"
+                  class="muted"
+                >
+                  No website activity.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </template>
   </section>
 </template>
@@ -204,31 +247,64 @@ onMounted(async () => {
   gap: 1.5rem;
   margin: 1rem 0;
 }
-.bars {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.legend {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
-.bars li {
+.swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+.swatch.off {
+  background: var(--border-strong);
+}
+.swatch.active {
+  background: var(--ok);
+}
+.swatch.idle {
+  background: var(--warn);
+}
+.timeline-strip {
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.timeline-ticks {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--border);
-}
-.timeline {
-  list-style: none;
-  padding: 0;
-}
-.timeline li {
-  display: flex;
-  gap: 1rem;
-  padding: 0.3rem 0;
-  border-bottom: 1px solid var(--border);
-}
-.timeline .when {
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
-  min-width: 4.5rem;
+  margin-top: 0.25rem;
+}
+.activity-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.activity-table th,
+.activity-table td {
+  text-align: left;
+  padding: 0.4rem 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.activity-table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.activity-table th:last-child,
+.activity-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 </style>
