@@ -17,6 +17,10 @@ const links = computed(() =>
         { to: "/attendance", label: "Attendance", icon: "clock" },
         { to: "/admin/attendance", label: "All attendance", icon: "calendar" },
         { to: "/activity", label: "Activity", icon: "pulse" },
+        { to: "/tasks", label: "Tasks", icon: "check-square" },
+        { to: "/vault", label: "Credentials", icon: "key" },
+        { to: "/events", label: "Events", icon: "calendar-event" },
+        { to: "/screenshots", label: "Screenshots", icon: "screenshot" },
         { to: "/reports", label: "Reports", icon: "chart" },
         { to: "/employees", label: "Employees", icon: "users" },
         { to: "/computers", label: "Computers", icon: "monitor" },
@@ -25,6 +29,9 @@ const links = computed(() =>
     : [
         { to: "/my", label: "My dashboard", icon: "home" },
         { to: "/attendance", label: "Attendance", icon: "clock" },
+        { to: "/tasks", label: "Tasks", icon: "check-square" },
+        { to: "/vault", label: "Credentials", icon: "key" },
+        { to: "/events", label: "Events", icon: "calendar-event" },
       ],
 );
 

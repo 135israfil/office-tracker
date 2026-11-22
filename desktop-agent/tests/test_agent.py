@@ -12,6 +12,7 @@ rather than review notes on purpose. A regression there would be silent.
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 
@@ -23,6 +24,7 @@ from agent.collectors.idle import (
     heartbeat_state,
     idle_seconds,
 )
+from agent.collectors.screenshot import capture_screenshot
 from agent.collectors.system import (
     EVENT_LOCK,
     EVENT_SHUTDOWN,
@@ -45,6 +47,7 @@ from agent.machine import machine_info, windows_name
 from agent.service import AgentService, NotRegistered
 from agent.single_instance import AlreadyRunning, SingleInstance
 from agent.storage.queue import SessionQueue
+from agent.storage.screenshot_queue import ScreenshotQueue
 from agent.tray import status_text
 
 
@@ -61,6 +64,13 @@ def queue(tmp_path):
     the real `%PROGRAMDATA%` installation directory the moment a test asked for status.
     """
     queue = SessionQueue(tmp_path / "queue.sqlite3")
+    yield queue
+    queue.close()
+
+
+@pytest.fixture
+def screenshot_queue(tmp_path):
+    queue = ScreenshotQueue(tmp_path / "screenshots.sqlite3")
     yield queue
     queue.close()
 
@@ -105,6 +115,10 @@ class FakeClient:
         self.calls.append(("sync", sessions))
         return self._next({"accepted": len(sessions), "duplicates": 0, "rejected": []})
 
+    def upload_screenshot(self, image, captured_at):
+        self.calls.append(("upload_screenshot", image, captured_at))
+        return self._next({})
+
 
 # --- Idle -------------------------------------------------------------------
 
@@ -129,6 +143,18 @@ class TestIdle:
     def test_idle_seconds_is_harmless_off_windows(self):
         # CI runs on Linux; the collector must not explode, and must not invent idleness.
         assert idle_seconds() >= 0.0
+
+
+class TestScreenshotCollector:
+    def test_capture_behaves_correctly_for_the_current_platform(self):
+        # CI runs on Linux, where None is the honest answer; a real Windows box (this
+        # sandbox included) actually captures something — either way the collector
+        # must not explode, and must not silently return the wrong kind of answer.
+        result = capture_screenshot()
+        if sys.platform == "win32":
+            assert isinstance(result, bytes) and result.startswith(b"\x89PNG")
+        else:
+            assert result is None
 
 
 # --- System events ----------------------------------------------------------
@@ -250,6 +276,35 @@ class TestApiClient:
         assert not AgentApiError("x", status=500).is_auth_failure
         assert not AgentApiError("network down").is_auth_failure
 
+    def test_upload_screenshot_sends_multipart_with_the_device_token(self):
+        captured = {}
+
+        class Session:
+            headers = {}
+
+            def post(self, url, *, data, files, headers, timeout):
+                captured.update(url=url, data=data, files=files, headers=headers)
+
+                class Response:
+                    status_code = 201
+                    content = b""
+
+                return Response()
+
+        client = AgentClient("https://office.example.com", token="dev-token", session=Session())
+        client.upload_screenshot(b"png-bytes", "2026-01-01T00:00:00Z")
+
+        assert captured["url"] == "https://office.example.com/api/agent/screenshot/"
+        assert captured["data"] == {"captured_at": "2026-01-01T00:00:00Z"}
+        assert captured["files"]["file"][1] == b"png-bytes"
+        assert captured["headers"]["Authorization"] == "Device dev-token"
+
+    def test_upload_screenshot_without_a_token_is_an_error(self):
+        client = AgentClient("https://office.example.com")
+        with pytest.raises(AgentApiError) as exc:
+            client.upload_screenshot(b"x", "2026-01-01T00:00:00Z")
+        assert exc.value.status == 401
+
 
 # --- Config and credentials -------------------------------------------------
 
@@ -322,6 +377,56 @@ class TestConfig:
             from agent import config as config_module
 
             config_module.store_token("")
+
+    def test_screenshot_settings_are_adopted_from_the_server(self, config):
+        assert config.screenshot_capture_enabled is False  # off by default
+        changed = config.apply_server_config(
+            {"screenshot_capture_enabled": True, "screenshot_interval_seconds": 45}
+        )
+        assert changed is True
+        assert config.screenshot_capture_enabled is True
+        assert config.screenshot_interval_seconds == 45
+
+
+# --- Screenshot queue --------------------------------------------------------
+
+
+class TestScreenshotQueue:
+    def test_round_trip(self, screenshot_queue):
+        row_id = screenshot_queue.enqueue("2026-01-01T00:00:00Z", b"fake-png-bytes")
+        assert screenshot_queue.pending_count() == 1
+
+        [item] = screenshot_queue.pending()
+        assert item["id"] == row_id
+        assert item["image"] == b"fake-png-bytes"
+
+    def test_marking_uploaded_removes_it(self, screenshot_queue):
+        row_id = screenshot_queue.enqueue("2026-01-01T00:00:00Z", b"x")
+        screenshot_queue.mark_uploaded(row_id)
+        assert screenshot_queue.pending_count() == 0
+
+    def test_pending_is_oldest_first(self, screenshot_queue):
+        first = screenshot_queue.enqueue("2026-01-01T00:00:00Z", b"first")
+        screenshot_queue.enqueue("2026-01-01T00:01:00Z", b"second")
+        assert screenshot_queue.pending()[0]["id"] == first
+
+    def test_discard_removes_the_row(self, screenshot_queue):
+        row_id = screenshot_queue.enqueue("2026-01-01T00:00:00Z", b"x")
+        screenshot_queue.discard(row_id)
+        assert screenshot_queue.pending_count() == 0
+
+    def test_a_full_queue_drops_the_capture_rather_than_raising(self, screenshot_queue):
+        from agent.storage import screenshot_queue as module
+
+        original = module.MAX_PENDING_ROWS
+        module.MAX_PENDING_ROWS = 1
+        try:
+            screenshot_queue.enqueue("t1", b"a")
+            dropped = screenshot_queue.enqueue("t2", b"b")
+        finally:
+            module.MAX_PENDING_ROWS = original
+        assert dropped is None
+        assert screenshot_queue.pending_count() == 1
 
 
 # --- Service ----------------------------------------------------------------
@@ -543,6 +648,156 @@ class TestService:
 
         assert order[0] == "periodic-start"
         assert order[1] == "periodic-end"
+
+    # --- Screenshots -----------------------------------------------------
+
+    def test_screenshots_are_not_captured_when_the_fleet_switch_is_off(
+        self, config, queue, screenshot_queue
+    ):
+        client = FakeClient(token="t")
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: b"image-bytes",
+        )
+        # config.screenshot_capture_enabled defaults to False.
+        service.screenshot_once()
+        assert screenshot_queue.pending_count() == 0
+        assert not any(call[0] == "upload_screenshot" for call in client.calls)
+
+    def test_a_capture_is_queued_and_uploaded_when_enabled(self, config, queue, screenshot_queue):
+        config.screenshot_capture_enabled = True
+        client = FakeClient(token="t")
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: b"image-bytes",
+        )
+
+        result = service.screenshot_once()
+
+        assert result["uploaded"] == 1
+        assert screenshot_queue.pending_count() == 0
+        upload_call = next(call for call in client.calls if call[0] == "upload_screenshot")
+        assert upload_call[1] == b"image-bytes"
+
+    def test_a_reader_returning_nothing_queues_nothing(self, config, queue, screenshot_queue):
+        config.screenshot_capture_enabled = True
+        client = FakeClient(token="t")
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: None,
+        )
+        service.screenshot_once()
+        assert screenshot_queue.pending_count() == 0
+
+    def test_a_broken_capture_never_raises(self, config, queue, screenshot_queue):
+        config.screenshot_capture_enabled = True
+
+        def explode():
+            raise OSError("capture failed")
+
+        client = FakeClient(token="t")
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=explode,
+        )
+        service.screenshot_once()  # must not raise
+        assert screenshot_queue.pending_count() == 0
+
+    def test_a_failed_upload_leaves_the_capture_queued_for_next_time(
+        self, config, queue, screenshot_queue
+    ):
+        config.screenshot_capture_enabled = True
+        client = FakeClient(token="t", responses=[AgentApiError("down")])
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: b"image-bytes",
+        )
+
+        result = service.screenshot_once()
+
+        assert result["uploaded"] == 0
+        assert screenshot_queue.pending_count() == 1
+
+    def test_a_rejected_upload_is_discarded_instead_of_blocking_the_queue(
+        self, config, queue, screenshot_queue
+    ):
+        """A 400 means the server will never accept this particular image — unlike a
+        network failure or an auth error, retrying it is pointless, and leaving it at
+        the head of the queue would stop every capture behind it from ever uploading."""
+        config.screenshot_capture_enabled = True
+        client = FakeClient(token="t", responses=[AgentApiError("bad image", status=400)])
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: None,
+        )
+        screenshot_queue.enqueue("2026-01-01T00:00:00Z", b"poison")
+        screenshot_queue.enqueue("2026-01-01T00:01:00Z", b"good-one")
+
+        result = service.screenshot_once()
+
+        assert result["uploaded"] == 1
+        assert screenshot_queue.pending_count() == 0
+
+    def test_an_unregistered_device_never_captures_or_uploads(
+        self, config, queue, screenshot_queue
+    ):
+        # Mirrors is_collecting's own reasoning for sampling: capturing before
+        # enrolment would buffer screenshots for a machine the server has never
+        # heard of. Must not raise either way.
+        config.screenshot_capture_enabled = True
+        client = FakeClient()
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: b"image-bytes",
+        )
+        service.screenshot_once()  # must not raise
+        assert screenshot_queue.pending_count() == 0
+
+    def test_run_screenshots_stops_on_request(self, config, queue, screenshot_queue):
+        config.screenshot_capture_enabled = True
+        client = FakeClient(token="t")
+        service = None
+
+        ticks = []
+
+        def sleep(seconds):
+            ticks.append(seconds)
+            if len(ticks) == 2:
+                service.stop()
+
+        service = self.make(
+            config,
+            client,
+            queue=queue,
+            screenshot_queue=screenshot_queue,
+            screenshot_reader=lambda: b"x",
+            sleep=sleep,
+        )
+        service.run_screenshots()
+
+        assert ticks == [config.screenshot_interval_seconds] * 2
+        assert any(call[0] == "upload_screenshot" for call in client.calls)
 
 
 # --- Single instance --------------------------------------------------------

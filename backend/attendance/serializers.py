@@ -23,6 +23,9 @@ class AppSettingsSerializer(serializers.ModelSerializer):
             "sync_interval_seconds",
             "agent_enabled",
             "activity_retention_days",
+            "screenshot_capture_enabled",
+            "screenshot_interval_seconds",
+            "screenshot_retention_days",
             "updated_at",
         ]
         read_only_fields = ["updated_at"]

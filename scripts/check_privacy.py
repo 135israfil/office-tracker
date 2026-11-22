@@ -1,15 +1,27 @@
 #!/usr/bin/env python
 """Fail the build if the codebase gains a capability README.txt §31 prohibits.
 
-§31 forbids keylogging, screen recording, screenshots, webcam, microphone and
-clipboard monitoring. Those are enforced structurally rather than by review: the
-libraries that make them possible must never appear in an import.
+§31 forbids keylogging, webcam, microphone and clipboard monitoring. Those are
+enforced structurally rather than by review: the libraries that make them
+possible must never appear in an import.
+
+Screenshot/screen-recording capture is deliberately NOT banned as of
+2026-11-22 (see README.txt §31's own note on this date, and
+docs/designs/screenshot-based-activity-tracking.md) - a conscious policy
+change by the project owner, made the way this file's own docstring always
+said a legitimate need should be handled: a documented, deliberate edit here,
+not a quiet workaround elsewhere. Input synthesis, key/mouse logging, and
+clipboard access remain fully banned; only the screen-capture capability
+itself was lifted. `pyautogui` stays banned outright even though it can also
+capture the screen, because it bundles that with input synthesis, which this
+change does not permit.
 
 `uiautomation` is the awkward case, and the reason this file has a second half.
 The browser collector cannot read an address bar without it, so it cannot be
-banned outright - but the same library can also synthesise keystrokes and grab
-bitmaps, which are exactly two of the things §31 rules out. Only its tree-reading
-APIs are permitted; the call-level check below rejects the rest by name.
+banned outright - but the same library can also synthesise keystrokes, which
+is still prohibited. Only its tree-reading and (as of the policy change above)
+bitmap-capture APIs are permitted; the call-level check below rejects the
+keystroke/mouse/clipboard half by name.
 
 This is a blunt instrument on purpose. If a legitimate need collides with it,
 that collision deserves a conversation, not a quiet exemption.
@@ -24,13 +36,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Module names that provide a prohibited capability, mapped to why they are banned.
+# mss/pyscreenshot/d3dshot (pure screen-capture libraries) are deliberately NOT
+# listed here as of 2026-11-22 - see this file's module docstring. pyautogui
+# stays banned: it bundles screen capture with input synthesis, and only the
+# capture half of this policy was lifted.
 BANNED_MODULES = {
     "keyboard": "key logging",
     "pynput": "key and mouse logging",
-    "mss": "screen capture",
-    "pyautogui": "screen capture and input synthesis",
-    "pyscreenshot": "screen capture",
-    "d3dshot": "screen capture",
+    "pyautogui": "input synthesis (bundled with screen capture, which is why this stays banned)",
     "cv2": "camera capture",
     "sounddevice": "microphone capture",
     "pyaudio": "microphone capture",
@@ -39,10 +52,9 @@ BANNED_MODULES = {
 }
 
 # Fully-qualified attribute paths that are prohibited even though their root
-# package is legitimate (Pillow is fine; Pillow's screen grabber is not).
-BANNED_ATTRIBUTES = {
-    "PIL.ImageGrab": "screen capture",
-}
+# package is legitimate. Pillow's ImageGrab (screen capture) was removed from
+# this list on 2026-11-22, the same deliberate policy change noted above.
+BANNED_ATTRIBUTES = {}
 
 # Method and function names that are prohibited anywhere they are called, because
 # they are the dual-use half of a library that is otherwise needed. `uiautomation`
@@ -65,10 +77,9 @@ BANNED_CALL_NAMES = {
     "DragDrop": "mouse synthesis",
     "WheelUp": "mouse synthesis",
     "WheelDown": "mouse synthesis",
-    # Screen capture
-    "CaptureToImage": "screen capture",
-    "BitmapFromWindow": "screen capture",
-    "ToBitmap": "screen capture",
+    # Screen capture (CaptureToImage/BitmapFromWindow/ToBitmap) was removed from
+    # this list on 2026-11-22 - screen capture is no longer prohibited, see the
+    # module docstring.
     # Clipboard
     "GetClipboardText": "clipboard monitoring",
     "SetClipboardText": "clipboard access",

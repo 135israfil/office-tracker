@@ -23,6 +23,8 @@ def install(tmp_path, monkeypatch):
 
     (tmp_path / "queue.sqlite3").write_bytes(b"sqlite queue with a day of history")
     (tmp_path / "queue.sqlite3-wal").write_bytes(b"write-ahead log")
+    (tmp_path / "screenshots.sqlite3").write_bytes(b"sqlite queue of captured screenshots")
+    (tmp_path / "screenshots.sqlite3-wal").write_bytes(b"write-ahead log")
     (tmp_path / "agent.json").write_text(json.dumps({"server_url": "https://office.example.com"}))
     (tmp_path / "agent.lock").write_text("")
     (tmp_path / "agent.log").write_text("some log lines")
@@ -42,6 +44,15 @@ class TestCleanup:
 
         assert not (directory / "queue.sqlite3").exists()
         assert not (directory / "queue.sqlite3-wal").exists()
+
+    def test_the_screenshot_queue_is_removed(self, install):
+        """Otherwise a decommissioned PC keeps a file of actual screen captures (§31)."""
+        directory, _ = install
+
+        cleanup()
+
+        assert not (directory / "screenshots.sqlite3").exists()
+        assert not (directory / "screenshots.sqlite3-wal").exists()
 
     def test_config_lock_and_log_are_removed(self, install):
         directory, _ = install

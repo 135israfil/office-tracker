@@ -118,6 +118,57 @@ defineProps({
       <path d="M3 10.6 12 3.5l9 7.1" />
       <path d="M5.6 9.4V20.5h12.8V9.4" />
     </template>
+
+    <template v-else-if="name === 'check-square'">
+      <rect
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="3"
+      />
+      <path d="M7.5 12.3l3 3 6-6.6" />
+    </template>
+
+    <template v-else-if="name === 'key'">
+      <circle
+        cx="8"
+        cy="15.5"
+        r="4.25"
+      />
+      <path d="M11 12.5 19.5 4" />
+      <path d="M15.5 8l2.5 2.5M18.5 5l2 2" />
+    </template>
+
+    <template v-else-if="name === 'calendar-event'">
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="16"
+        rx="2.5"
+      />
+      <path d="M8 3v4M16 3v4M3 10.5h18" />
+      <circle
+        cx="12"
+        cy="15.5"
+        r="1.6"
+        fill="currentColor"
+        stroke="none"
+      />
+    </template>
+
+    <template v-else-if="name === 'screenshot'">
+      <rect
+        x="3"
+        y="4"
+        width="18"
+        height="13"
+        rx="1.8"
+      />
+      <path d="M8 20.5h8M12 17v3.5" />
+      <path d="M8.5 13l3-3.3 2 2 3-3.3" />
+    </template>
   </svg>
 </template>
 

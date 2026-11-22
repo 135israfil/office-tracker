@@ -40,6 +40,17 @@ class AuditLog(models.Model):
         # job ran and found nothing" and "the job did not run" are different facts, and
         # a delete job nobody can reconstruct afterwards is a liability (D5).
         ACTIVITY_PURGED = "ACTIVITY_PURGED", "Activity purged by retention job"
+        # The first Action ever logged for an admin's own *read* rather than an
+        # admin's write/correction of something else — a deliberate precedent
+        # extension (see vault/views.py's reveal action and docs/designs/
+        # work-credential-store.md), not a drop-in reuse of this log's usual shape.
+        VAULT_ENTRY_REVEALED_BY_ADMIN = (
+            "VAULT_ENTRY_REVEALED_BY_ADMIN",
+            "Vault entry revealed by admin",
+        )
+        EVENT_VIEWED_BY_ADMIN = "EVENT_VIEWED_BY_ADMIN", "Calendar event viewed by admin"
+        SCREENSHOT_VIEWED_BY_ADMIN = "SCREENSHOT_VIEWED_BY_ADMIN", "Screenshot viewed by admin"
+        SCREENSHOT_PURGED = "SCREENSHOT_PURGED", "Screenshots purged by retention job"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

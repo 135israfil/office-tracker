@@ -75,6 +75,12 @@ class AgentConfig:
     idle_threshold_seconds: int = 300
     sync_interval_seconds: int = 60
     enabled: bool = True
+    # Off by default (README.txt §31, reversed for this capability on
+    # 2026-11-22 — see docs/designs/screenshot-based-activity-tracking.md): a
+    # fleet-wide kill switch an admin must deliberately turn on, the same
+    # "defaults closed" posture the backend's own setting uses.
+    screenshot_capture_enabled: bool = False
+    screenshot_interval_seconds: int = 60
     config_version: int = 0
 
     _path: Path | None = field(default=None, repr=False, compare=False)
@@ -118,6 +124,8 @@ class AgentConfig:
             "idle_threshold_seconds",
             "sync_interval_seconds",
             "enabled",
+            "screenshot_capture_enabled",
+            "screenshot_interval_seconds",
             "config_version",
         ):
             if key in payload and payload[key] != getattr(self, key):

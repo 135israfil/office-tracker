@@ -5,16 +5,29 @@ to every employee **before** tracking starts. README.txt §31 requires that empl
 informed; handing someone a laptop with a tracking agent already on it and no notice does
 not meet that requirement, whatever the software does.*
 
+*This version adds screenshot capture, which an earlier version of this notice told
+employees would never happen ("Ever, including on request"). If any employee already
+received that earlier version, this is not a quiet amendment to hand out at the next
+all-hands — re-issue it individually, call out explicitly that this is a reversal of
+that specific earlier promise, and get a positive acknowledgment from each employee
+before enabling screenshot capture for them. [SCREENSHOTS APPROVED BY / DATE] should
+record who made this decision and when.*
+
 ---
 
 ## In short
 
-Two things are recorded: **when you check in and out, and where you were when you did**,
-and **what your work PC was doing while the agent was running**.
+Three things are recorded: **when you check in and out, and where you were when you
+did**, **what your work PC was doing while the agent was running**, and, as of
+[DATE SCREENSHOTS ENABLED], **periodic screenshots of your screen while the agent is
+running**. Screenshots are the one item on this list that you cannot see yourself —
+see "Who can see it" below.
 
 The list below of what is *not* recorded is not a promise about intent. It describes
 what the software is built to be incapable of: those capabilities are absent from the
 code, and an automated check refuses to build a release that adds any of them.
+Screenshot capture is a deliberate, named exception to that list, added on the date
+above — every other item below is still enforced the same way it always was.
 
 ---
 
@@ -50,12 +63,27 @@ Recorded only while the agent is running on your work PC:
 | Which application was in the foreground | `Google Chrome`, `Visual Studio Code`, `Microsoft Excel` |
 | The domain of the website in the foreground browser tab | `github.com` |
 
+### Screenshots
+
+*Added [DATE SCREENSHOTS ENABLED]. This is a materially different and more sensitive
+capability than the rest of PC activity above, and is called out in its own section
+rather than folded into the table, on purpose.*
+
+| Recorded | Detail |
+|---|---|
+| A screenshot of your screen | Taken periodically while the agent is running, at [SCREENSHOT INTERVAL] |
+| How long it is kept | [SCREENSHOT RETENTION DAYS] days, deleted on its own schedule — not the same [RETENTION DAYS]-day schedule as the rest of PC activity |
+| Who can view it | [WHICH ROLES] only. **Not you.** Every other item this system records about you, you can see yourself at [SYSTEM URL]/my; a captured screenshot is the one exception — you cannot see the image itself. |
+| What you can see instead | Whether a screenshot of yours has been viewed, by whom, and when — this is logged every time, with no exceptions, and shown back to you at [SYSTEM URL]/my |
+| Before anyone views it | Each screenshot goes through a review/redaction step first. Nobody — including an administrator — can open a screenshot that hasn't cleared that step. |
+
 ---
 
 ## What is **not** recorded
 
 - **Keystrokes.** No keylogging of any kind.
-- **Screenshots or screen recording.** Ever, including on request.
+- **Screen recording (video).** Only still screenshots, per above — not continuous
+  recording.
 - **Webcam or microphone.**
 - **Clipboard contents.**
 - **Window titles.** The title bar names the document, spreadsheet or message you have
@@ -79,6 +107,9 @@ Recorded only while the agent is running on your work PC:
   connection.
 - **PC activity is deleted automatically after [RETENTION DAYS] days** (the default is
   90). This is a scheduled job, not a manual clear-out, and every run is logged.
+- **Screenshots are deleted automatically after [SCREENSHOT RETENTION DAYS] days**, on
+  their own separate schedule from the rest of PC activity, for the same reason: a
+  scheduled, logged job, not a manual clear-out.
 - **Attendance and leave records are kept**, because they are employment records rather
   than activity monitoring. They are not covered by the automatic deletion above.
 - Administrative actions — changing your record, correcting attendance, exporting
@@ -87,9 +118,12 @@ Recorded only while the agent is running on your work PC:
 ## Who can see it
 
 - **You** can see all of your own data, at any time, at [SYSTEM URL]/my — the same
-  numbers your manager sees, not a summary.
+  numbers your manager sees, not a summary. **The one exception is screenshots**: you
+  can see that one was captured, and a log of who viewed it and when, but not the image
+  itself.
 - **[WHICH ROLES — e.g. HR and your line manager]** can see the whole workforce's
-  attendance and activity, and can export it.
+  attendance and activity, and can export it. For screenshots specifically, every view
+  is logged, with no exceptions — including for the above roles.
 - Other employees cannot see your data. The system refuses the request rather than
   quietly returning something else.
 

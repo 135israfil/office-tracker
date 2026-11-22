@@ -33,6 +33,27 @@ export function dateTime(value, timeZone) {
   return new Date(value).toLocaleString([], timeZone ? { timeZone } : {});
 }
 
+// Task deadlines are a bare date (YYYY-MM-DD), not a timestamp — the existing
+// clockTime/dateTime helpers both assume a time component, which would misrender or
+// shift a date-only value across a timezone boundary.
+export function dateOnly(value) {
+  if (!value) return "—";
+  return new Date(`${value}T00:00:00`).toLocaleDateString();
+}
+
+// `<input type="datetime-local">` needs "YYYY-MM-DDTHH:mm" in the browser's own
+// local time, not the API's UTC ISO string — converts one way for display;
+// `new Date(localString)` (parsed as browser-local) converts back on submit.
+export function toDatetimeLocal(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
 export function today() {
   // Local date in YYYY-MM-DD, which is what the API's date parameters expect.
   const now = new Date();

@@ -57,6 +57,27 @@ if not DEBUG and SECRET_KEY in INSECURE_SECRET_KEYS:
         'print(get_random_secret_key())"'
     )
 
+# A dedicated secret, never a reuse of SECRET_KEY — losing it means every stored
+# vault entry becomes permanently undecryptable (no rotation tooling exists for
+# this iteration; see docs/designs/work-credential-store.md's Open Questions).
+# The DEBUG-only fallback is a fixed, valid-format Fernet key — insecure because
+# it is predictable, not because it is malformed, the same distinction
+# SECRET_KEY's own "insecure-dev-key" default makes.
+VAULT_ENCRYPTION_KEY = env(
+    "VAULT_ENCRYPTION_KEY",
+    default="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=" if DEBUG else None,
+    required=not DEBUG,
+)
+
+# A dedicated directory, never STATIC_ROOT or any web-served path — the only way
+# to read a file back is the screenshots app's audited `view` action.
+SCREENSHOT_STORAGE_ROOT = env(
+    "SCREENSHOT_STORAGE_ROOT",
+    default=str(BASE_DIR / "screenshot_storage") if DEBUG else None,
+    required=not DEBUG,
+)
+os.makedirs(SCREENSHOT_STORAGE_ROOT, exist_ok=True)
+
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
@@ -78,6 +99,10 @@ INSTALLED_APPS = [
     "computers",
     "activities",
     "reports",
+    "tasks",
+    "vault",
+    "events",
+    "screenshots",
 ]
 
 MIDDLEWARE = [
@@ -198,6 +223,15 @@ REST_FRAMEWORK = {
         # authenticated per device but counted per employee, who may own several PCs.
         "agent-register": "30/min",
         "agent": "120/min",
+        # Decrypting a stored credential is the other action where unlimited
+        # attempts are actually useful to an attacker (scripted scraping of every
+        # entry a session can reach); the blanket 2000/hour "user" rate was never
+        # meant to cover it.
+        "vault-reveal": "30/min",
+        # Viewing raw screen content is the same class of action for the same
+        # reason — a rate limit an admin would never hit by accident, but that
+        # bounds scripted bulk-viewing of a whole fleet's captures.
+        "screenshot-view": "30/min",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 25,

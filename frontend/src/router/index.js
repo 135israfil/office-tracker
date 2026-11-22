@@ -31,6 +31,62 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
+    // Both roles use this, unlike most routes below: any employee can create and
+    // be assigned tasks, not just admins.
+    path: "/tasks",
+    name: "tasks",
+    component: () => import("@/views/TasksView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/tasks/:id",
+    name: "task-detail",
+    component: () => import("@/views/TaskDetailView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    // Both roles use this, like /tasks: any employee has their own credential
+    // entries, not just admins.
+    path: "/vault",
+    name: "vault",
+    component: () => import("@/views/VaultView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/vault/:id",
+    name: "vault-entry-detail",
+    component: () => import("@/views/VaultEntryDetailView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    // Both roles use this, like /tasks and /vault: any employee has their own
+    // calendar, not just admins.
+    path: "/events",
+    name: "events",
+    component: () => import("@/views/EventsView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/events/:id",
+    name: "event-detail",
+    component: () => import("@/views/EventDetailView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    // Admin-only at the route level too, unlike /tasks, /vault and /events —
+    // there is no employee-facing view of this resource at all.
+    path: "/screenshots",
+    name: "screenshots",
+    component: () => import("@/views/ScreenshotsView.vue"),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
+  {
+    path: "/screenshots/:id",
+    name: "screenshot-detail",
+    component: () => import("@/views/ScreenshotDetailView.vue"),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: "/attendance",
     name: "attendance",
     component: () => import("@/views/CheckInView.vue"),

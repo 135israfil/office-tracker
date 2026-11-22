@@ -10,6 +10,11 @@ from django.utils import timezone
 from accounts.models import Role
 from computers.models import Computer, ComputerStatus, hash_token
 from employees.models import Employee, EmployeeShift, EmployeeStatus
+from events.models import Event, EventGrant
+from screenshots.models import ScreenshotCapture
+from tasks.models import Task, TaskAssignee
+from vault.crypto import encrypt_secret
+from vault.models import VaultEntry, VaultEntryGrant
 
 User = get_user_model()
 
@@ -84,3 +89,98 @@ class ComputerFactory(factory.django.DjangoModelFactory):
     status = ComputerStatus.OFFLINE
     device_token_hash = factory.Sequence(lambda n: hash_token(f"test-token-{n}"))
     registered_at = factory.LazyFunction(timezone.now)
+
+
+class TaskFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Task
+        skip_postgeneration_save = True
+
+    title = factory.Sequence(lambda n: f"Task {n}")
+    created_by = factory.SubFactory(EmployeeFactory)
+
+    @factory.post_generation
+    def assignees(obj, create, extracted, **kwargs):
+        """Pass assignees=[employee, ...] to assign on creation, assigned by the
+        task's own creator — the common case in tests."""
+        if not create or not extracted:
+            return
+        for employee in extracted:
+            TaskAssignee.objects.create(task=obj, employee=employee, assigned_by=obj.created_by)
+
+
+class TaskAssigneeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = TaskAssignee
+
+    task = factory.SubFactory(TaskFactory)
+    employee = factory.SubFactory(EmployeeFactory)
+    assigned_by = factory.SubFactory(EmployeeFactory)
+
+
+class VaultEntryFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = VaultEntry
+        skip_postgeneration_save = True
+
+    title = factory.Sequence(lambda n: f"Entry {n}")
+    username = factory.Sequence(lambda n: f"user{n}")
+    owner = factory.SubFactory(EmployeeFactory)
+    secret_ciphertext = factory.LazyFunction(lambda: encrypt_secret("test-password-123"))
+
+    @factory.post_generation
+    def grantees(obj, create, extracted, **kwargs):
+        """Pass grantees=[employee, ...] to share on creation, granted by the
+        entry's own owner — the common case in tests."""
+        if not create or not extracted:
+            return
+        for employee in extracted:
+            VaultEntryGrant.objects.create(entry=obj, grantee=employee, granted_by=obj.owner)
+
+
+class VaultEntryGrantFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = VaultEntryGrant
+
+    entry = factory.SubFactory(VaultEntryFactory)
+    grantee = factory.SubFactory(EmployeeFactory)
+    granted_by = factory.SubFactory(EmployeeFactory)
+
+
+class EventFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Event
+        skip_postgeneration_save = True
+
+    title = factory.Sequence(lambda n: f"Event {n}")
+    owner = factory.SubFactory(EmployeeFactory)
+    # One day in the future by default, so a plain EventFactory() is UPCOMING.
+    start = factory.LazyFunction(lambda: timezone.now() + dt.timedelta(days=1))
+
+    @factory.post_generation
+    def grantees(obj, create, extracted, **kwargs):
+        """Pass grantees=[employee, ...] to share on creation, granted by the
+        event's own owner — the common case in tests."""
+        if not create or not extracted:
+            return
+        for employee in extracted:
+            EventGrant.objects.create(event=obj, grantee=employee, granted_by=obj.owner)
+
+
+class EventGrantFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = EventGrant
+
+    event = factory.SubFactory(EventFactory)
+    grantee = factory.SubFactory(EmployeeFactory)
+    granted_by = factory.SubFactory(EmployeeFactory)
+
+
+class ScreenshotCaptureFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = ScreenshotCapture
+
+    employee = factory.SubFactory(EmployeeFactory)
+    computer = factory.SubFactory(ComputerFactory)
+    captured_at = factory.LazyFunction(timezone.now)
+    file = factory.django.FileField(data=b"not a real png, just test bytes", filename="test.png")

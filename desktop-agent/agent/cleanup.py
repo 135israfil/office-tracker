@@ -25,6 +25,7 @@ from pathlib import Path
 from .config import CONFIG_FILENAME, clear_token, data_dir
 from .single_instance import LOCK_FILENAME
 from .storage.queue import QUEUE_FILENAME
+from .storage.screenshot_queue import QUEUE_FILENAME as SCREENSHOT_QUEUE_FILENAME
 
 log = logging.getLogger("agent.cleanup")
 
@@ -49,6 +50,9 @@ REMOVABLE_FILES = [
     QUEUE_FILENAME,
     f"{QUEUE_FILENAME}-wal",
     f"{QUEUE_FILENAME}-shm",
+    SCREENSHOT_QUEUE_FILENAME,
+    f"{SCREENSHOT_QUEUE_FILENAME}-wal",
+    f"{SCREENSHOT_QUEUE_FILENAME}-shm",
     CONFIG_FILENAME,
     LOCK_FILENAME,
     "agent.log",

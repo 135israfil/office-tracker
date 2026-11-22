@@ -285,6 +285,41 @@ onMounted(load);
         </p>
       </fieldset>
 
+      <fieldset>
+        <legend>Screenshots</legend>
+        <div class="form-grid">
+          <label>
+            Capture interval (s)
+            <input
+              v-model.number="settings.screenshot_interval_seconds"
+              type="number"
+              min="10"
+            >
+          </label>
+          <label>
+            Screenshot retention (days)
+            <input
+              v-model.number="settings.screenshot_retention_days"
+              type="number"
+              min="1"
+            >
+          </label>
+        </div>
+        <label class="check">
+          <input
+            v-model="settings.screenshot_capture_enabled"
+            type="checkbox"
+          >
+          Desktop agents capture screenshots
+        </label>
+        <p class="muted small">
+          Off by default. Only admins can ever view a captured screenshot — not the
+          employee it was taken of — and every view is logged, with no exceptions.
+          Screenshots are deleted on their own schedule, independent of the activity
+          retention window above.
+        </p>
+      </fieldset>
+
       <p
         v-if="message"
         class="ok"

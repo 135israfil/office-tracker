@@ -7,13 +7,17 @@ and their failure modes (a token that stopped working, a server that came back a
 outage, an interval the admin changed at lunchtime, a laptop that slept through a
 session) are exactly the ones nobody is watching for.
 
-Three loops, deliberately independent:
+Four loops, deliberately independent:
 
 - **heartbeat** — liveness and PC-on sessions. Cheap, and the one the server uses to
   decide whether this machine is on at all.
 - **sampler** — reads the collectors every couple of seconds and hands changes to the
   session builder. Never touches the network.
 - **sync** — drains the local queue to the server. Never touches the collectors.
+- **screenshots** — captures and uploads screenshots, when the fleet switch is on
+  (README.txt §31, reversed for this one capability — see docs/designs/
+  screenshot-based-activity-tracking.md). Off by default; a stuck capture or a slow
+  upload must not affect the other three any more than they affect each other.
 
 Keeping them apart means a server outage cannot stop collection, and a stuck collector
 cannot stop the machine from reporting that it is alive.
@@ -30,9 +34,11 @@ from .api import AgentApiError, AgentClient, backoff_seconds
 from .collectors.application import foreground_app
 from .collectors.browser import BrowserCollector
 from .collectors.idle import STATE_ONLINE, heartbeat_state, idle_seconds
+from .collectors.screenshot import capture_screenshot
 from .machine import machine_info
 from .sessions import Sample, SessionBuilder
 from .storage.queue import SessionQueue
+from .storage.screenshot_queue import ScreenshotQueue
 from .sync.client import SyncService
 from .version import __version__
 
@@ -67,6 +73,8 @@ class AgentService:
         queue=None,
         builder=None,
         sync_service=None,
+        screenshot_queue=None,
+        screenshot_reader=capture_screenshot,
         clock=_utcnow,
         sleep=None,
         token_loader=config_module.load_token,
@@ -77,6 +85,7 @@ class AgentService:
         self.idle_reader = idle_reader
         self.app_reader = app_reader
         self.browser = browser_collector or BrowserCollector()
+        self.screenshot_reader = screenshot_reader
         self.clock = clock
         self.token_loader = token_loader
         self.token_saver = token_saver
@@ -95,6 +104,7 @@ class AgentService:
         self.builder = builder or SessionBuilder()
         self._queue = queue
         self._sync = sync_service
+        self._screenshot_queue = screenshot_queue
 
         self.last_error: str | None = None
         self.last_state: str | None = None
@@ -115,6 +125,13 @@ class AgentService:
         if self._sync is None:
             self._sync = SyncService(self.queue, self.client)
         return self._sync
+
+    @property
+    def screenshot_queue(self) -> ScreenshotQueue:
+        """Opened on first use, same reasoning as `queue` above."""
+        if self._screenshot_queue is None:
+            self._screenshot_queue = ScreenshotQueue()
+        return self._screenshot_queue
 
     # --- Credentials -------------------------------------------------------
 
@@ -219,6 +236,14 @@ class AgentService:
         """
         return self.is_registered and self.config.enabled
 
+    @property
+    def is_capturing_screenshots(self) -> bool:
+        """Screenshot capture needs both collection generally enabled and its
+        own, separate fleet switch on — off by default, so a fleet never
+        starts capturing screenshots just because an admin turned on
+        ordinary activity collection."""
+        return self.is_collecting and self.config.screenshot_capture_enabled
+
     def sample_once(self) -> list[dict]:
         """Take one reading and queue whatever sessions it closed."""
         now = self.clock()
@@ -255,6 +280,63 @@ class AgentService:
             self._sleep(SAMPLE_INTERVAL_SECONDS)
         # Whatever is open at shutdown ends now; it is real time that was observed.
         self._enqueue(self.builder.flush(self.clock()))
+
+    # --- Screenshots ---------------------------------------------------------
+
+    def screenshot_once(self) -> dict:
+        """Capture one screenshot if due, then upload whatever is pending.
+
+        Capture and upload share a cycle rather than two separate loops: the
+        local queue is durable either way, so a capture that cannot upload
+        immediately is retried on the next cycle, the same "write before you
+        try to send it" ordering `_enqueue` uses for sessions.
+        """
+        if self.is_capturing_screenshots:
+            try:
+                image = self.screenshot_reader()
+            except Exception:
+                log.exception("Screenshot capture failed; skipping this tick")
+                image = None
+            if image:
+                self.screenshot_queue.enqueue(self.clock().isoformat(), image)
+
+        uploaded = 0
+        if self.is_registered:
+            for item in self.screenshot_queue.pending():
+                try:
+                    self.client.upload_screenshot(item["image"], item["captured_at"])
+                except AgentApiError as exc:
+                    if exc.status == 400:
+                        # The upload itself is invalid (bad image, bad timestamp) —
+                        # the backend's serializer validation, not a transport or
+                        # auth problem. Not transient: keeping it at the head of the
+                        # queue would block every capture behind it forever, so it
+                        # is dropped and the next one is tried. 401/403/429 and
+                        # network failures fall through to the retry path below,
+                        # since those say nothing about this particular image.
+                        self.screenshot_queue.discard(item["id"])
+                        log.error(
+                            "Server rejected screenshot %s; dropped locally: %s", item["id"], exc
+                        )
+                        continue
+                    self.screenshot_queue.record_attempt(item["id"])
+                    log.warning("Screenshot upload failed: %s", exc)
+                    # Oldest-first: stop here rather than skip past a failure and
+                    # upload a newer one out of order.
+                    break
+                self.screenshot_queue.mark_uploaded(item["id"])
+                uploaded += 1
+        return {"uploaded": uploaded, "pending": self.screenshot_queue.pending_count()}
+
+    def run_screenshots(self):
+        while not self._stop.is_set():
+            try:
+                self.screenshot_once()
+            except Exception:
+                # A bug here must not take heartbeat, sampling or session sync down
+                # with it — the same independence every other loop already has.
+                log.exception("Screenshot cycle failed; continuing")
+            self._sleep(self.config.screenshot_interval_seconds)
 
     # --- Sync --------------------------------------------------------------
 
@@ -362,5 +444,7 @@ class AgentService:
             "idle_threshold_seconds": self.config.idle_threshold_seconds,
             "sync_interval_seconds": self.config.sync_interval_seconds,
             "pending_sessions": queue_stats["pending"],
+            "screenshot_capture_enabled": self.is_capturing_screenshots,
+            "pending_screenshots": self.screenshot_queue.pending_count(),
             "last_error": self.last_error,
         }

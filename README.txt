@@ -825,7 +825,6 @@ If multi-company support is enabled, organization-level data isolation is requir
 The MVP must NOT implement:
 - Keylogging
 - Screen recording
-- Screenshots
 - Webcam
 - Microphone
 - Clipboard monitoring
@@ -833,6 +832,19 @@ The MVP must NOT implement:
 - Private chat monitoring
 - Email content collection
 - File content monitoring
+
+Screenshots are permitted as of 2026-11-22, by deliberate decision of the
+project owner — this reverses the prior blanket prohibition on screenshot
+capture specifically, and only that item. Every other prohibition above is
+unchanged. Screenshot capture must be admin/HR-viewable only, subject to a
+redaction/review gate before first view, and subject to its own retention
+policy distinct from other PC-activity data (see
+docs/designs/screenshot-based-activity-tracking.md). Before this capability
+is enabled against any real, non-test employee, the organization must
+reissue the employee privacy notice describing it explicitly and obtain a
+positive re-acknowledgment from each affected employee, and should confirm
+the applicable jurisdiction's legal requirements for screen-content capture
+of employees.
 
 The organization should inform employees that GPS attendance and PC activity tracking are enabled and define an appropriate data-retention policy.
 

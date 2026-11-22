@@ -41,6 +41,9 @@ User = get_user_model()
 # production configuration is not quietly testing a configuration nobody would ship.
 REALISTIC_SECRET_KEY = "k7Qx2mVpZ9dLr4Tn8sWbEyH3gJuC6aFo1iN5tRvXqM0zPlSdKw"
 
+# A valid Fernet key, required in production the same way DJANGO_SECRET_KEY is.
+REALISTIC_VAULT_ENCRYPTION_KEY = "jzmHUs1_LoWrALAvo5r1NnzCrKic-iWOkrOM6IhYSuQ="
+
 
 @pytest.fixture
 def office(db):
@@ -391,6 +394,7 @@ class TestDeploymentGuards:
             monkeypatch,
             DJANGO_DEBUG="false",
             DJANGO_SECRET_KEY=REALISTIC_SECRET_KEY,
+            VAULT_ENCRYPTION_KEY=REALISTIC_VAULT_ENCRYPTION_KEY,
         )
 
         assert settings_module.SESSION_COOKIE_SECURE is True
@@ -408,6 +412,7 @@ class TestDeploymentGuards:
             monkeypatch,
             DJANGO_DEBUG="false",
             DJANGO_SECRET_KEY=REALISTIC_SECRET_KEY,
+            VAULT_ENCRYPTION_KEY=REALISTIC_VAULT_ENCRYPTION_KEY,
             DJANGO_SECURE_HSTS_SECONDS="0",
         )
         assert settings_module.SECURE_HSTS_SECONDS == 0
@@ -421,6 +426,7 @@ class TestDeploymentGuards:
             monkeypatch,
             DJANGO_DEBUG="false",
             DJANGO_SECRET_KEY=REALISTIC_SECRET_KEY,
+            VAULT_ENCRYPTION_KEY=REALISTIC_VAULT_ENCRYPTION_KEY,
         )
 
         overrides = {

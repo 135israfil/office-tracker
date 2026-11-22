@@ -123,12 +123,13 @@ def run_agent(service: AgentService, headless: bool) -> int:
     watcher = SystemEventWatcher(service.report_event)
     watcher.start()
 
-    # Three independent loops (see AgentService): an outage must not stop collection,
+    # Four independent loops (see AgentService): an outage must not stop collection,
     # and a stuck collector must not stop liveness.
     threads = [
         threading.Thread(target=service.run, name="heartbeat", daemon=True),
         threading.Thread(target=service.run_sampler, name="sampler", daemon=True),
         threading.Thread(target=service.run_sync, name="sync", daemon=True),
+        threading.Thread(target=service.run_screenshots, name="screenshots", daemon=True),
     ]
     for thread in threads:
         thread.start()

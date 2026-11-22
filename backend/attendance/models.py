@@ -110,6 +110,26 @@ class AppSettings(models.Model):
         help_text="Applies to raw activity sessions only. Attendance is never auto-deleted.",
     )
 
+    # Screenshots (§31, reversed for this capability on 2026-11-22 — see
+    # docs/designs/screenshot-based-activity-tracking.md). Deliberately its own
+    # field, never activity_retention_days: changing one retention window must
+    # never silently change the other, since screenshots are materially more
+    # sensitive than app-name/domain activity data.
+    screenshot_capture_enabled = models.BooleanField(
+        default=False,
+        help_text="Fleet-wide kill switch for screenshot capture, off by default.",
+    )
+    screenshot_interval_seconds = models.PositiveIntegerField(
+        default=60,
+        validators=[MinValueValidator(10)],
+        help_text="How often the agent captures a screenshot, when enabled.",
+    )
+    screenshot_retention_days = models.PositiveIntegerField(
+        default=7,
+        validators=[MinValueValidator(1), MaxValueValidator(3650)],
+        help_text="Applies to screenshot captures only, independent of activity_retention_days.",
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

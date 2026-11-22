@@ -17,6 +17,20 @@ function getCookie(name) {
   return null;
 }
 
+async function fetchJson(url, { method = "GET", headers, body } = {}) {
+  const response = await fetch(url, { method, credentials: "include", headers, body });
+
+  const payload = response.status === 204 ? null : await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(`Request failed with status ${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
 export async function request(path, { method = "GET", body, ...options } = {}) {
   const headers = { Accept: "application/json", ...options.headers };
 
@@ -28,21 +42,27 @@ export async function request(path, { method = "GET", body, ...options } = {}) {
     if (csrf) headers["X-CSRFToken"] = csrf;
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const payload = await fetchJson(`${BASE_URL}${path}`, {
     method,
-    credentials: "include",
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-  const payload = response.status === 204 ? null : await response.json().catch(() => null);
-
-  if (!response.ok) {
-    const error = new Error(`Request failed with status ${response.status}`);
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
+  // DRF's PageNumberPagination caps every list response at PAGE_SIZE (25, see
+  // backend/config/settings.py) and links the rest through `next`. Every list view in
+  // this app expects `.results` to be the whole collection, so pagination is followed
+  // here, once, rather than in each view that lists something.
+  if (payload && Array.isArray(payload.results) && "next" in payload) {
+    let results = payload.results;
+    let next = payload.next;
+    while (next) {
+      const page = await fetchJson(next, { headers });
+      results = results.concat(page.results);
+      next = page.next;
+    }
+    return { ...payload, results, next: null };
   }
+
   return payload;
 }
 
@@ -82,6 +102,28 @@ export async function download(path) {
   // Revoking immediately can cancel the download in some browsers; a tick is enough.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return name;
+}
+
+// A screenshot's image is served only by the admin-only, audit-logged `view`
+// action — never a plain <img src>, which would bypass the session cookie
+// rules `request()` relies on and leave no way to surface a 403/404. Returns
+// an object URL the caller is responsible for revoking once the <img> using
+// it unmounts.
+export async function fetchImageObjectUrl(path) {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "image/*" },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const error = new Error(`Request failed with status ${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }
 
 function query(params = {}) {
@@ -145,6 +187,48 @@ export const api = {
   issueEnrollmentCode: (id) => request(`/computers/${id}/issue-code/`, { method: "POST" }),
   disableComputer: (id) => request(`/computers/${id}/disable/`, { method: "POST" }),
   enableComputer: (id) => request(`/computers/${id}/enable/`, { method: "POST" }),
+
+  // Tasks
+  // Minimal, non-admin-safe employee directory for the assignee picker — not
+  // listEmployees, which is admin-only and exposes full HR fields.
+  listAssignableEmployees: () => request("/tasks/assignable-employees/"),
+  listTasks: (params) => request(`/tasks/${query(params)}`),
+  getTask: (id) => request(`/tasks/${id}/`),
+  createTask: (body) => request("/tasks/", { method: "POST", body }),
+  updateTask: (id, body) => request(`/tasks/${id}/`, { method: "PATCH", body }),
+  deleteTask: (id) => request(`/tasks/${id}/`, { method: "DELETE" }),
+  addTaskAssignee: (id, employeeId) =>
+    request(`/tasks/${id}/add_assignee/`, { method: "POST", body: { employee: employeeId } }),
+  removeTaskAssignee: (id, employeeId) =>
+    request(`/tasks/${id}/assignees/${employeeId}/`, { method: "DELETE" }),
+
+  // Vault (work credential store)
+  listVaultEntries: (params) => request(`/vault-entries/${query(params)}`),
+  getVaultEntry: (id) => request(`/vault-entries/${id}/`),
+  createVaultEntry: (body) => request("/vault-entries/", { method: "POST", body }),
+  updateVaultEntry: (id, body) => request(`/vault-entries/${id}/`, { method: "PATCH", body }),
+  deleteVaultEntry: (id) => request(`/vault-entries/${id}/`, { method: "DELETE" }),
+  revealVaultEntry: (id) => request(`/vault-entries/${id}/reveal/`, { method: "POST" }),
+  shareVaultEntry: (id, employeeId) =>
+    request(`/vault-entries/${id}/share/`, { method: "POST", body: { employee: employeeId } }),
+  revokeVaultEntryGrant: (id, employeeId) =>
+    request(`/vault-entries/${id}/grants/${employeeId}/`, { method: "DELETE" }),
+
+  // Calendar events
+  listEvents: (params) => request(`/events/${query(params)}`),
+  getEvent: (id) => request(`/events/${id}/`),
+  createEvent: (body) => request("/events/", { method: "POST", body }),
+  updateEvent: (id, body) => request(`/events/${id}/`, { method: "PATCH", body }),
+  deleteEvent: (id) => request(`/events/${id}/`, { method: "DELETE" }),
+  shareEvent: (id, employeeId) =>
+    request(`/events/${id}/share/`, { method: "POST", body: { employee: employeeId } }),
+  revokeEventGrant: (id, employeeId) =>
+    request(`/events/${id}/grants/${employeeId}/`, { method: "DELETE" }),
+
+  // Screenshots (admin-only; the captured employee never gets API access)
+  listScreenshots: (params) => request(`/screenshots/${query(params)}`),
+  getScreenshot: (id) => request(`/screenshots/${id}/`),
+  viewScreenshotImage: (id) => fetchImageObjectUrl(`/screenshots/${id}/view/`),
 
   // Settings and holidays
   getSettings: () => request("/settings/"),

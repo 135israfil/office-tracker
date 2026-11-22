@@ -5,10 +5,11 @@ keyring>=25.4,<26
 psutil>=6.0,<8
 pystray>=0.19,<1
 # Floor is 12.3, not a convenience: 11.x carries 25 known CVEs in its image decoders
-# (pip-audit, 2026-08-19), all fixed by 12.3. Pillow is here only because pystray draws
-# the tray icon with it, so none of that decoding is reachable from anything this agent
-# reads — but shipping a binary with a known-vulnerable library in it is not a position
-# worth defending, and the upgrade is free.
+# (pip-audit, 2026-08-19), all fixed by 12.3. Originally pulled in only for pystray's
+# tray icon; as of 2026-11-22 (README.txt §31, reversed for screenshot capture only —
+# see docs/designs/screenshot-based-activity-tracking.md) agent.collectors.screenshot
+# also uses it, via PIL.ImageGrab — permitted by scripts/check_privacy.py, which still
+# rejects every other capability this library could enable.
 pillow>=12.3,<14
 pywin32>=306; sys_platform == "win32"
 # Tree-reading only — see scripts/check_privacy.py, which rejects its input-synthesis

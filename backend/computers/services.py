@@ -53,6 +53,8 @@ def agent_config_payload(settings_obj=None, computer: Computer | None = None) ->
         "heartbeat_interval_seconds": settings_obj.heartbeat_interval_seconds,
         "sync_interval_seconds": settings_obj.sync_interval_seconds,
         "enabled": settings_obj.agent_enabled,
+        "screenshot_capture_enabled": settings_obj.screenshot_capture_enabled,
+        "screenshot_interval_seconds": settings_obj.screenshot_interval_seconds,
         "config_version": int(settings_obj.updated_at.timestamp() * 1000),
     }
     if computer is not None:

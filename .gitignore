@@ -15,6 +15,9 @@ staticfiles/*
 !staticfiles/.gitkeep
 media/
 *.sqlite3
+# Dev-mode default for SCREENSHOT_STORAGE_ROOT (config/settings.py) — holds real
+# captured screen images, never meant to be committed.
+backend/screenshot_storage/
 
 # Node
 node_modules/

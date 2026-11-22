@@ -24,6 +24,10 @@ TIMEOUT = (5, 10)
 # read timeout than a heartbeat — but still a bounded one.
 SYNC_TIMEOUT = (5, 30)
 
+# A screenshot is a much larger single payload than a session batch; the read timeout
+# gives a slow upload link room without being unbounded.
+SCREENSHOT_TIMEOUT = (5, 30)
+
 # Backoff bounds for the caller's retry loop. Capped at five minutes so a server that
 # comes back after an outage is picked up promptly rather than an hour later.
 BACKOFF_BASE_SECONDS = 5
@@ -155,3 +159,37 @@ class AgentClient:
 
     def get_config(self) -> dict:
         return self._request("GET", "config")
+
+    def upload_screenshot(self, image: bytes, captured_at: str) -> dict:
+        """Upload one captured screenshot.
+
+        Not routed through `_request`: that method only knows how to send a
+        JSON body, and this is multipart/form-data carrying a binary image —
+        a different enough shape that a parallel, small method is clearer
+        than bending `_request` to cover both.
+        """
+        if not self.token:
+            raise AgentApiError("This device is not registered.", status=401)
+
+        try:
+            response = self.session.post(
+                self._url("screenshot"),
+                data={"captured_at": captured_at},
+                files={"file": ("screenshot.png", image, "image/png")},
+                headers={"Authorization": f"Device {self.token}"},
+                timeout=SCREENSHOT_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            raise AgentApiError(f"POST screenshot failed: {exc}") from exc
+
+        if response.status_code >= 400:
+            payload = {}
+            with contextlib.suppress(ValueError):
+                payload = response.json()
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            raise AgentApiError(
+                detail or f"POST screenshot returned {response.status_code}",
+                status=response.status_code,
+                payload=payload if isinstance(payload, dict) else {},
+            )
+        return {}

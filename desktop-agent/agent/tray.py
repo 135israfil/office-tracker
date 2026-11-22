@@ -77,6 +77,9 @@ def status_text(status: dict) -> str:
         lines.append(f"Employee: {status['employee_name'] or 'unknown'}")
         lines.append(f"State: {status['state'] or 'starting'}")
         lines.append("Collecting: yes" if status["collecting"] else "Collecting: paused by admin")
+        lines.append(
+            "Screenshots: on" if status["screenshot_capture_enabled"] else "Screenshots: off"
+        )
     else:
         lines.append("This computer is not enrolled yet.")
     if status["last_error"]:

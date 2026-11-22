@@ -20,6 +20,8 @@ from activities.services import ingest_sessions
 from attendance.models import AppSettings
 from core.audit import record
 from core.models import AuditLog
+from screenshots.models import ScreenshotCapture
+from screenshots.serializers import ScreenshotUploadSerializer
 
 from .authentication import DeviceTokenAuthentication
 from .permissions import IsRegisteredDevice
@@ -138,3 +140,33 @@ class AgentConfigView(APIView):
 
     def get(self, request):
         return Response(agent_config_payload(AppSettings.load(), computer=request.auth))
+
+
+class AgentScreenshotUploadView(APIView):
+    """One captured screenshot per request (multipart), not a batch.
+
+    Unlike `AgentSyncView`'s JSON session batches, a screenshot is a single
+    binary file — shoehorning it into the same batch-upsert shape would be the
+    wrong fit, the same lesson the backend's data model already learned from
+    not grafting screenshots onto `Activity`. `employee`/`computer` are
+    resolved from the authenticated device, never the request body.
+    """
+
+    authentication_classes = [DeviceTokenAuthentication]
+    permission_classes = [IsRegisteredDevice]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "agent"
+
+    def post(self, request):
+        serializer = ScreenshotUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        computer = request.auth
+        ScreenshotCapture.objects.create(
+            employee=computer.employee,
+            computer=computer,
+            captured_at=data["captured_at"],
+            file=data["file"],
+        )
+        return Response(status=status.HTTP_201_CREATED)
