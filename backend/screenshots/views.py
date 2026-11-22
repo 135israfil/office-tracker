@@ -18,6 +18,9 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.throttling import ScopedRateThrottle
 
+from activities.queries import day_window
+from activities.views import parse_date
+from attendance.models import AppSettings
 from core.audit import record
 from core.models import AuditLog
 
@@ -27,9 +30,22 @@ from .serializers import ScreenshotCaptureSerializer
 
 
 class ScreenshotCaptureViewSet(viewsets.ReadOnlyModelViewSet):
+    """List/retrieve filtered the same way `ActivityViewSet` is — by employee
+    and day — so the activity page can show the one day's captures for the
+    one employee it is already looking at, not every screenshot ever taken."""
+
     serializer_class = ScreenshotCaptureSerializer
     permission_classes = [IsAdminOnly]
-    queryset = ScreenshotCapture.objects.select_related("employee", "computer")
+
+    def get_queryset(self):
+        params = self.request.query_params
+        queryset = ScreenshotCapture.objects.select_related("employee", "computer")
+        if params.get("employee"):
+            queryset = queryset.filter(employee_id=params["employee"])
+        if params.get("date"):
+            window_start, window_end = day_window(parse_date(params["date"], AppSettings.load()))
+            queryset = queryset.filter(captured_at__gte=window_start, captured_at__lt=window_end)
+        return queryset
 
     @action(detail=True, methods=["get"])
     def view(self, request, pk=None):

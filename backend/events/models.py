@@ -1,109 +1,101 @@
-"""Event calendar: personal by default, optionally shared with named
-coworkers. No company-wide visibility in this iteration (see docs/designs/
-event-calendar.md) — every visibility rule here is two-tier only: owner, or
-an explicit named grantee (plus the admin override).
+"""Event declaration: a venue/agency booking owned by its creator.
 
-Sharing is an explicit through-model (`EventGrant`), not a bare
-`ManyToManyField`, for the same reason `vault.VaultEntryGrant` and
-`tasks.TaskAssignee` are: per-grant state (who granted it, when) is needed
-from day one. A grant is visibility only — there is no accept/decline/RSVP
-state, and this is deliberate: it should not grow into an invitation
-workflow later without that being a conscious decision.
+Visibility is company-wide once an event is locked in, not grant-based: the
+owner always sees their own event regardless of status, an admin sees every
+event, and any other employee sees it only once `booking_status` is LOCKED
+(see `views.py`'s `get_queryset` and `permissions.py`) — there is no
+per-employee sharing list to manage.
+
+Budget, document status and financial status are admin-only: the owner (who
+may be a plain employee) declares and tracks the booking itself, but only an
+admin ever sees or sets the money/paperwork fields, regardless of who owns
+the event — enforced in `serializers.py` (read visibility) and `views.py`'s
+dedicated `financials` action (write access), not by the owner-based rule
+every other field follows.
+
+`assigned_lead` and `booking_status` are a second, narrower admin override,
+through `views.py`'s dedicated `coordination` action: any admin may set who
+is leading an event and how locked-in it is, the same regardless-of-owner
+pattern `financials` uses — everything else (title, agency/venue, setup,
+alert date) stays owner-only.
+
+There is deliberately no separate lifecycle status (no draft/active/
+cancelled): `booking_status` (on communication / locked / done) already
+answers "where is this event at", and a second status field answering the
+same question would just be two sources of truth to keep in sync.
 """
 
 from __future__ import annotations
 
-from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
 
 from employees.models import Employee
 
 
-class EventStatus(models.TextChoices):
-    ACTIVE = "ACTIVE", "Active"
-    CANCELLED = "CANCELLED", "Cancelled"
+class EventBookingStatus(models.TextChoices):
+    ON_COMMUNICATION = "ON_COMMUNICATION", "On communication"
+    LOCKED = "LOCKED", "Locked"
+    DONE = "DONE", "Done"
 
 
-class EventPhase(models.TextChoices):
-    UPCOMING = "UPCOMING", "Upcoming"
-    IN_PROGRESS = "IN_PROGRESS", "In progress"
-    PAST = "PAST", "Past"
+class EventDocumentStatus(models.TextChoices):
+    VERBAL_COMMUNICATION = "VERBAL_COMMUNICATION", "Verbal communication"
+    PROPOSAL_SENT = "PROPOSAL_SENT", "Proposal sent"
+    WORK_ORDER = "WORK_ORDER", "Work order"
+    VERBAL_CONFIRMATION = "VERBAL_CONFIRMATION", "Verbal confirmation"
+    INVOICE_SENT = "INVOICE_SENT", "Invoice sent"
 
 
-def event_phase(start, end, now) -> str:
-    """Pure: where `now` falls relative to an event's start/end.
-
-    Explicitly three-state, unlike `tasks.task_is_overdue`'s binary
-    threshold — an event has a start *and* optional end, not a single
-    deadline date. Kept free of its own clock, the same convention
-    `task_is_overdue` and `activities.queries` follow, so this is testable
-    against fabricated instants rather than hoped about.
-    """
-    if now < start:
-        return EventPhase.UPCOMING
-    if end is not None and start <= now <= end:
-        return EventPhase.IN_PROGRESS
-    return EventPhase.PAST
+class EventFinancialStatus(models.TextChoices):
+    ADVANCE = "ADVANCE", "Advance"
+    PARTIAL_PAID = "PARTIAL_PAID", "Partial paid"
+    FULL_PAID = "FULL_PAID", "Full paid"
 
 
 class Event(models.Model):
-    # PROTECT, not CASCADE: an employee record must not silently take every
-    # event they ever created with it if it is ever removed — a grantee may
-    # still be relying on a shared event's continued existence.
+    # PROTECT: an employee record must not silently take every event they
+    # ever created with it if it is ever removed.
     owner = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name="events")
     title = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
-    start = models.DateTimeField()
-    end = models.DateTimeField(null=True, blank=True)
-    all_day = models.BooleanField(default=False)
-    location = models.CharField(max_length=200, blank=True)
-    status = models.CharField(
-        max_length=16, choices=EventStatus.choices, default=EventStatus.ACTIVE
+    agency_name = models.CharField(max_length=200, blank=True)
+    venue_name = models.CharField(max_length=200, blank=True)
+    # Rich text (HTML from the frontend's editor), not a single line — no
+    # length cap for the same reason `description` fields elsewhere are TextField.
+    setup = models.TextField(blank=True)
+    # PROTECT, like `owner`: a lead's own employee record must not silently take
+    # every event they were ever assigned to with it if it is ever removed.
+    assigned_lead = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="led_events",
+    )
+    booking_status = models.CharField(
+        max_length=20,
+        choices=EventBookingStatus.choices,
+        default=EventBookingStatus.ON_COMMUNICATION,
+    )
+    alert_on = models.DateField(null=True, blank=True)
+    # Admin-only, see the module docstring.
+    budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    document_status = models.CharField(
+        max_length=24, choices=EventDocumentStatus.choices, blank=True
+    )
+    financial_status = models.CharField(
+        max_length=16, choices=EventFinancialStatus.choices, blank=True
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["start", "id"]
+        # Soonest alert first; an event with no alert date sorts last, not first.
+        ordering = ["alert_on", "id"]
         indexes = [
             models.Index(fields=["owner"]),
-            models.Index(fields=["start"]),
+            models.Index(fields=["alert_on"]),
+            models.Index(fields=["booking_status"]),
         ]
 
     def __str__(self):
         return self.title
-
-    def clean(self):
-        if self.end is not None and self.end < self.start:
-            raise ValidationError({"end": "An event cannot end before it starts."})
-
-    @property
-    def phase(self) -> str:
-        return event_phase(self.start, self.end, timezone.now())
-
-
-class EventGrant(models.Model):
-    """One employee's view-only access to one event — the through-model for
-    `Event.grants`."""
-
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="grants")
-    grantee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="event_grants")
-    # PROTECT: who granted access is part of this event's history and must
-    # not be erased by that person's own employee record being removed later.
-    granted_by = models.ForeignKey(
-        Employee, on_delete=models.PROTECT, related_name="event_grants_made"
-    )
-    granted_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["granted_at"]
-        constraints = [
-            models.UniqueConstraint(fields=["event", "grantee"], name="unique_grant_per_event")
-        ]
-        indexes = [
-            models.Index(fields=["grantee", "event"]),
-        ]
-
-    def __str__(self):
-        return f"event {self.event_id} -> employee {self.grantee_id}"

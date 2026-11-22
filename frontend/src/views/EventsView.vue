@@ -2,9 +2,11 @@
 import { computed, onMounted, ref } from "vue";
 
 import { api } from "@/api/client";
-import { describeError, toDatetimeLocal } from "@/lib/format";
+import RichTextEditor from "@/components/RichTextEditor.vue";
+import { dateOnly, describeError } from "@/lib/format";
 
 const events = ref([]);
+const employees = ref([]);
 const loading = ref(false);
 const error = ref("");
 const formError = ref("");
@@ -12,36 +14,40 @@ const showForm = ref(false);
 
 const blankForm = () => ({
   title: "",
-  description: "",
-  start: "",
-  end: "",
-  all_day: false,
-  location: "",
+  agency_name: "",
+  venue_name: "",
+  setup: "",
+  assigned_lead_id: "",
+  booking_status: "ON_COMMUNICATION",
+  alert_on: "",
 });
 const form = ref(blankForm());
 
-const PHASE_BADGE = { UPCOMING: "", IN_PROGRESS: "active", PAST: "inactive" };
-const PHASE_LABEL = { UPCOMING: "Upcoming", IN_PROGRESS: "In progress", PAST: "Past" };
-const PHASE_ORDER = { UPCOMING: 0, IN_PROGRESS: 1, PAST: 2 };
+const BOOKING_STATUSES = ["ON_COMMUNICATION", "LOCKED", "DONE"];
+const BOOKING_STATUS_LABEL = {
+  ON_COMMUNICATION: "On communication",
+  LOCKED: "Locked",
+  DONE: "Done",
+};
+const BOOKING_STATUS_BADGE = { ON_COMMUNICATION: "warn", LOCKED: "inactive", DONE: "active" };
 
-// Upcoming and in-progress events first (soonest start first), past events
-// last — computed here rather than in the backend query, since phase is a
-// read-time Python rule, not a database column.
+// Soonest alert first, same ordering the backend's own default returns —
+// sorted again here only because the list can also include events with no
+// alert date at all, which the API already puts last.
 const sortedEvents = computed(() =>
-  [...events.value].sort((a, b) => {
-    if (PHASE_ORDER[a.phase] !== PHASE_ORDER[b.phase]) {
-      return PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase];
-    }
-    return a.start < b.start ? -1 : 1;
-  }),
+  [...events.value].sort((a, b) => (a.alert_on ?? "9999") < (b.alert_on ?? "9999") ? -1 : 1),
 );
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const list = await api.listEvents();
+    const [list, assignable] = await Promise.all([
+      api.listEvents(),
+      api.listAssignableEmployees(),
+    ]);
     events.value = list.results ?? list;
+    employees.value = assignable;
   } catch (err) {
     error.value = describeError(err);
   } finally {
@@ -54,8 +60,8 @@ async function createEvent() {
   try {
     await api.createEvent({
       ...form.value,
-      start: new Date(form.value.start).toISOString(),
-      end: form.value.end ? new Date(form.value.end).toISOString() : null,
+      assigned_lead_id: form.value.assigned_lead_id || null,
+      alert_on: form.value.alert_on || null,
     });
     form.value = blankForm();
     showForm.value = false;
@@ -79,37 +85,59 @@ onMounted(load);
 
     <form
       v-if="showForm"
-      class="form-grid"
+      class="event-form"
       @submit.prevent="createEvent"
     >
-      <label>Title<input
+      <label class="span">Title<input
         v-model="form.title"
         required
+        placeholder="e.g. Annual Gala"
       ></label>
-      <label>Location<input v-model="form.location"></label>
-      <label>Start<input
-        v-model="form.start"
-        type="datetime-local"
-        required
-      ></label>
-      <label>End<input
-        v-model="form.end"
-        type="datetime-local"
-      ></label>
-      <label class="check">
-        <input
-          v-model="form.all_day"
-          type="checkbox"
-        >
-        All day
+
+      <h4 class="span section-heading">
+        Booking
+      </h4>
+      <label>Agency name<input v-model="form.agency_name"></label>
+      <label>Venue name<input v-model="form.venue_name"></label>
+      <label>
+        Assigned lead
+        <select v-model="form.assigned_lead_id">
+          <option value="">
+            Unassigned
+          </option>
+          <option
+            v-for="employee in employees"
+            :key="employee.id"
+            :value="employee.id"
+          >
+            {{ employee.name }} ({{ employee.employee_id }})
+          </option>
+        </select>
       </label>
-      <label class="span">
-        Description
-        <textarea
-          v-model="form.description"
-          rows="2"
-        />
+      <label>
+        Status
+        <select v-model="form.booking_status">
+          <option
+            v-for="status in BOOKING_STATUSES"
+            :key="status"
+            :value="status"
+          >
+            {{ BOOKING_STATUS_LABEL[status] }}
+          </option>
+        </select>
       </label>
+      <label class="span">Alert on<input
+        v-model="form.alert_on"
+        type="date"
+      ></label>
+
+      <h4 class="span section-heading">
+        Setup
+      </h4>
+      <div class="span">
+        <RichTextEditor v-model="form.setup" />
+      </div>
+
       <p
         v-if="formError"
         class="error span"
@@ -136,9 +164,10 @@ onMounted(load);
         <thead>
           <tr>
             <th>Title</th>
-            <th>Phase</th>
-            <th>Start</th>
-            <th>Shared with</th>
+            <th>Venue</th>
+            <th>Assigned lead</th>
+            <th>Status</th>
+            <th>Alert on</th>
             <th>Owner</th>
           </tr>
         </thead>
@@ -150,30 +179,19 @@ onMounted(load);
             @click="$router.push(`/events/${event.id}`)"
           >
             <td>{{ event.title }}</td>
+            <td>{{ event.venue_name || "—" }}</td>
+            <td>{{ event.assigned_lead?.name ?? "—" }}</td>
             <td>
-              <span :class="['badge', PHASE_BADGE[event.phase]]">{{ PHASE_LABEL[event.phase] }}</span>
-              <span
-                v-if="event.status === 'CANCELLED'"
-                class="badge inactive"
-              >Cancelled</span>
+              <span :class="['badge', BOOKING_STATUS_BADGE[event.booking_status]]">
+                {{ BOOKING_STATUS_LABEL[event.booking_status] }}
+              </span>
             </td>
-            <td>{{ toDatetimeLocal(event.start).replace("T", " ") }}</td>
-            <td>
-              <span
-                v-for="grant in event.grants"
-                :key="grant.grantee.id"
-                class="chip"
-              >{{ grant.grantee.name }}</span>
-              <span
-                v-if="!event.grants.length"
-                class="muted"
-              >Not shared</span>
-            </td>
+            <td>{{ event.alert_on ? dateOnly(event.alert_on) : "—" }}</td>
             <td>{{ event.owner.name }}</td>
           </tr>
           <tr v-if="!sortedEvents.length && !loading">
             <td
-              colspan="5"
+              colspan="6"
               class="muted"
             >
               No events yet.
@@ -188,5 +206,27 @@ onMounted(load);
 <style scoped>
 .event-row {
   cursor: pointer;
+}
+.event-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1.3rem;
+  margin-bottom: 1.5rem;
+}
+.event-form .span {
+  grid-column: 1 / -1;
+}
+.section-heading {
+  margin: 1rem 0 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.event-form > h4:first-of-type {
+  padding-top: 0;
+  border-top: none;
 }
 </style>

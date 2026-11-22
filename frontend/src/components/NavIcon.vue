@@ -157,18 +157,6 @@ defineProps({
         stroke="none"
       />
     </template>
-
-    <template v-else-if="name === 'screenshot'">
-      <rect
-        x="3"
-        y="4"
-        width="18"
-        height="13"
-        rx="1.8"
-      />
-      <path d="M8 20.5h8M12 17v3.5" />
-      <path d="M8.5 13l3-3.3 2 2 3-3.3" />
-    </template>
   </svg>
 </template>
 

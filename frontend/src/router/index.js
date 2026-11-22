@@ -73,14 +73,9 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    // Admin-only at the route level too, unlike /tasks, /vault and /events —
-    // there is no employee-facing view of this resource at all.
-    path: "/screenshots",
-    name: "screenshots",
-    component: () => import("@/views/ScreenshotsView.vue"),
-    meta: { requiresAuth: true, requiresAdmin: true },
-  },
-  {
+    // Admin-only, like /activity, which is the only place a link to this
+    // route exists now — screenshots are browsed per employee/day from the
+    // activity grid, not from their own nav entry.
     path: "/screenshots/:id",
     name: "screenshot-detail",
     component: () => import("@/views/ScreenshotDetailView.vue"),

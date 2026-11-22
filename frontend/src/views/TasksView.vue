@@ -11,8 +11,16 @@ const error = ref("");
 const formError = ref("");
 const showForm = ref(false);
 
-const blankForm = () => ({ title: "", description: "", deadline: "", assignees: [] });
+const blankForm = () => ({
+  title: "",
+  description: "",
+  deadline: "",
+  assignees: [],
+  status: "TODO",
+});
 const form = ref(blankForm());
+
+const STATUSES = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
 
 // Reuses this app's existing semantic badge colours (active/inactive/warn) rather than
 // inventing one colour per status, so a 5-value status field still reads at a glance.
@@ -89,6 +97,18 @@ onMounted(load);
         v-model="form.title"
         required
       ></label>
+      <label>
+        Status
+        <select v-model="form.status">
+          <option
+            v-for="status in STATUSES"
+            :key="status"
+            :value="status"
+          >
+            {{ status }}
+          </option>
+        </select>
+      </label>
       <label>Deadline<input
         v-model="form.deadline"
         type="date"

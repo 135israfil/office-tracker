@@ -22,7 +22,14 @@ const assigneeError = ref("");
 const subtaskError = ref("");
 
 const newAssigneeId = ref("");
-const subtaskForm = ref({ title: "", deadline: "" });
+const blankSubtaskForm = () => ({
+  title: "",
+  description: "",
+  deadline: "",
+  assignees: [],
+  status: "TODO",
+});
+const subtaskForm = ref(blankSubtaskForm());
 const showSubtaskForm = ref(false);
 
 const myEmployeeId = computed(() => auth.user?.employee?.id ?? null);
@@ -90,9 +97,8 @@ async function createSubtask() {
       ...subtaskForm.value,
       deadline: subtaskForm.value.deadline || null,
       parent: task.value.id,
-      assignees: [],
     });
-    subtaskForm.value = { title: "", deadline: "" };
+    subtaskForm.value = blankSubtaskForm();
     showSubtaskForm.value = false;
     subtasks.value = (await api.listTasks({ parent: task.value.id })).results ?? [];
   } catch (err) {
@@ -268,10 +274,45 @@ onMounted(load);
             v-model="subtaskForm.title"
             required
           ></label>
+          <label>
+            Status
+            <select v-model="subtaskForm.status">
+              <option
+                v-for="status in STATUSES"
+                :key="status"
+                :value="status"
+              >
+                {{ status }}
+              </option>
+            </select>
+          </label>
           <label>Deadline<input
             v-model="subtaskForm.deadline"
             type="date"
           ></label>
+          <label class="span">
+            Description
+            <textarea
+              v-model="subtaskForm.description"
+              rows="2"
+            />
+          </label>
+          <label class="span">
+            Assignees
+            <select
+              v-model="subtaskForm.assignees"
+              multiple
+              size="5"
+            >
+              <option
+                v-for="employee in employees"
+                :key="employee.id"
+                :value="employee.id"
+              >
+                {{ employee.name }} ({{ employee.employee_id }})
+              </option>
+            </select>
+          </label>
           <p
             v-if="subtaskError"
             class="error span"

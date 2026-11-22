@@ -219,11 +219,11 @@ export const api = {
   getEvent: (id) => request(`/events/${id}/`),
   createEvent: (body) => request("/events/", { method: "POST", body }),
   updateEvent: (id, body) => request(`/events/${id}/`, { method: "PATCH", body }),
+  updateEventFinancials: (id, body) =>
+    request(`/events/${id}/financials/`, { method: "PATCH", body }),
+  updateEventCoordination: (id, body) =>
+    request(`/events/${id}/coordination/`, { method: "PATCH", body }),
   deleteEvent: (id) => request(`/events/${id}/`, { method: "DELETE" }),
-  shareEvent: (id, employeeId) =>
-    request(`/events/${id}/share/`, { method: "POST", body: { employee: employeeId } }),
-  revokeEventGrant: (id, employeeId) =>
-    request(`/events/${id}/grants/${employeeId}/`, { method: "DELETE" }),
 
   // Screenshots (admin-only; the captured employee never gets API access)
   listScreenshots: (params) => request(`/screenshots/${query(params)}`),

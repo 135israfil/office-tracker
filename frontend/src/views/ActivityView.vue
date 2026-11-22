@@ -12,6 +12,7 @@ const employees = ref([]);
 const employeeId = ref(route.query.employee ?? "");
 const date = ref(route.query.date ?? today());
 const summary = ref(null);
+const screenshots = ref([]);
 const loading = ref(false);
 const error = ref("");
 
@@ -56,12 +57,18 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    summary.value = await api.activitySummary({ employee: employeeId.value, date: date.value });
+    const [daySummary, shots] = await Promise.all([
+      api.activitySummary({ employee: employeeId.value, date: date.value }),
+      api.listScreenshots({ employee: employeeId.value, date: date.value }),
+    ]);
+    summary.value = daySummary;
+    screenshots.value = shots.results ?? shots;
     // Keep the URL in step so the page can be linked to and reloaded.
     router.replace({ query: { employee: employeeId.value, date: date.value } });
   } catch (err) {
     error.value = describeError(err);
     summary.value = null;
+    screenshots.value = [];
   } finally {
     loading.value = false;
   }
@@ -236,6 +243,28 @@ onMounted(async () => {
           </table>
         </div>
       </div>
+
+      <h4>Screenshots</h4>
+      <div
+        v-if="screenshots.length"
+        class="screenshot-grid"
+      >
+        <RouterLink
+          v-for="shot in screenshots"
+          :key="shot.id"
+          :to="`/screenshots/${shot.id}`"
+          class="screenshot-tile"
+        >
+          <span class="time">{{ clockTime(shot.captured_at, timezone) }}</span>
+          <span class="muted small">{{ shot.computer_name }}</span>
+        </RouterLink>
+      </div>
+      <p
+        v-else
+        class="muted"
+      >
+        No screenshots captured for this day.
+      </p>
     </template>
   </section>
 </template>
@@ -306,5 +335,26 @@ onMounted(async () => {
 .activity-table td:last-child {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+}
+.screenshot-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.75rem 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: inherit;
+}
+.screenshot-tile .time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 </style>

@@ -11,6 +11,8 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from attendance.calendar_rules import local_date
+from attendance.models import AppSettings
 from core.models import AuditLog
 from screenshots.retention import purge_screenshots
 from tests.factories import AdminFactory, EmployeeFactory, ScreenshotCaptureFactory
@@ -62,6 +64,23 @@ class TestVisibility:
         ScreenshotCaptureFactory()
         body = client.get("/api/screenshots/").json()
         assert "file" not in body["results"][0]
+
+    def test_listing_can_be_filtered_to_one_employee_and_day(self, admin_client):
+        """The activity page asks for exactly the employee and day it is already
+        showing — without this, it would get every capture ever taken."""
+        client, _ = admin_client
+        wanted = ScreenshotCaptureFactory(captured_at=timezone.now())
+        ScreenshotCaptureFactory()  # a different employee, same day
+        ScreenshotCaptureFactory(
+            employee=wanted.employee, captured_at=timezone.now() - dt.timedelta(days=5)
+        )
+
+        day = local_date(timezone.now(), AppSettings.load())
+        body = client.get(
+            "/api/screenshots/", {"employee": wanted.employee_id, "date": day.isoformat()}
+        ).json()
+
+        assert [row["id"] for row in body["results"]] == [wanted.pk]
 
 
 # --- API: the `view` action and unconditional audit logging -------------------

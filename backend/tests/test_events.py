@@ -1,56 +1,19 @@
-"""Event calendar: the phase pure function, the same data-isolation exit
-criterion test_dashboards.py enforces for activity data, and the
-admin-visibility disclosure/audit-logging decisions from the design — with
-one deliberate difference from test_vault.py: list must never log, only
+"""Event declarations: company-wide visibility once LOCKED, the admin-only
+visibility and write access of the budget/document/financial-status fields,
+and the admin-visibility disclosure/audit-logging decisions — with one
+deliberate difference from test_vault.py: list must never log, only
 retrieve.
 """
 
 from __future__ import annotations
 
-import datetime as dt
-
 import pytest
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import AuditLog
-from events.models import EventPhase, event_phase
 from tests.factories import AdminFactory, EmployeeFactory, EventFactory
 
-# --- Pure logic ---------------------------------------------------------------
-
-
-class TestEventPhase:
-    def test_an_event_that_has_not_started_is_upcoming(self):
-        now = dt.datetime(2026, 1, 1, 12, 0, tzinfo=dt.timezone.utc)
-        start = dt.datetime(2026, 1, 2, 9, 0, tzinfo=dt.timezone.utc)
-        assert event_phase(start, None, now) == EventPhase.UPCOMING
-
-    def test_an_event_within_its_start_and_end_is_in_progress(self):
-        now = dt.datetime(2026, 1, 1, 12, 0, tzinfo=dt.timezone.utc)
-        start = dt.datetime(2026, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-        end = dt.datetime(2026, 1, 1, 17, 0, tzinfo=dt.timezone.utc)
-        assert event_phase(start, end, now) == EventPhase.IN_PROGRESS
-
-    def test_an_event_past_its_end_is_past(self):
-        now = dt.datetime(2026, 1, 2, 12, 0, tzinfo=dt.timezone.utc)
-        start = dt.datetime(2026, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-        end = dt.datetime(2026, 1, 1, 17, 0, tzinfo=dt.timezone.utc)
-        assert event_phase(start, end, now) == EventPhase.PAST
-
-    def test_a_point_in_time_event_with_no_end_is_past_once_its_start_has_passed(self):
-        now = dt.datetime(2026, 1, 2, 12, 0, tzinfo=dt.timezone.utc)
-        start = dt.datetime(2026, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-        assert event_phase(start, None, now) == EventPhase.PAST
-
-    def test_an_event_starting_exactly_now_with_no_end_is_past_not_in_progress(self):
-        # No end means no "in progress" state is reachable at all.
-        now = dt.datetime(2026, 1, 1, 9, 0, tzinfo=dt.timezone.utc)
-        start = now
-        assert event_phase(start, None, now) == EventPhase.PAST
-
-
-# --- API: data isolation (mirrors TestEmployeeIsolation in test_dashboards.py) ---
+# --- API: visibility -----------------------------------------------------------
 
 
 @pytest.fixture
@@ -68,39 +31,45 @@ def client_for(employee):
 
 
 @pytest.mark.django_db
-class TestEventIsolation:
+class TestEventVisibility:
     def test_unauthenticated_is_refused(self):
         event = EventFactory()
         assert APIClient().get(f"/api/events/{event.pk}/").status_code == 403
 
-    def test_an_uninvolved_employee_cannot_see_the_event(self):
+    def test_an_uninvolved_employee_cannot_see_an_unlocked_event(self):
         alice = EmployeeFactory()
-        event = EventFactory()  # owned by someone else entirely
+        event = EventFactory()  # ON_COMMUNICATION by default, owned by someone else
         response = client_for(alice).get(f"/api/events/{event.pk}/")
         assert response.status_code == 404
 
-    def test_the_owner_sees_their_own_event(self):
+    def test_any_employee_can_see_a_locked_event(self):
+        alice = EmployeeFactory()
+        event = EventFactory(booking_status="LOCKED")
+        assert client_for(alice).get(f"/api/events/{event.pk}/").status_code == 200
+
+    def test_the_owner_sees_their_own_event_even_when_not_locked(self):
         event = EventFactory()
         assert client_for(event.owner).get(f"/api/events/{event.pk}/").status_code == 200
-
-    def test_a_grantee_who_is_not_the_owner_sees_the_event(self):
-        bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        assert client_for(bob).get(f"/api/events/{event.pk}/").status_code == 200
 
     def test_an_admin_sees_everything(self, admin_client):
         client, _ = admin_client
         event = EventFactory()
         assert client.get(f"/api/events/{event.pk}/").status_code == 200
 
-    def test_an_owner_with_zero_grantees_still_sees_their_own_event_in_the_list(self):
+    def test_an_owner_with_no_locked_events_still_sees_their_own_event_in_the_list(self):
         event = EventFactory()
         body = client_for(event.owner).get("/api/events/").json()
         assert body["count"] == 1
 
-    def test_the_list_excludes_events_owned_by_someone_else(self):
+    def test_the_list_includes_locked_events_owned_by_someone_else(self):
         alice = EmployeeFactory()
-        EventFactory()  # someone else's event
+        EventFactory(booking_status="LOCKED")
+        body = client_for(alice).get("/api/events/").json()
+        assert body["count"] == 1
+
+    def test_the_list_excludes_unlocked_events_owned_by_someone_else(self):
+        alice = EmployeeFactory()
+        EventFactory()  # someone else's, still ON_COMMUNICATION
         body = client_for(alice).get("/api/events/").json()
         assert body["count"] == 0
 
@@ -112,31 +81,151 @@ class TestEventIsolation:
 class TestCreate:
     def test_creating_an_event_stores_it_owned_by_the_creator(self):
         owner = EmployeeFactory()
-        start = (timezone.now() + dt.timedelta(days=1)).isoformat()
-        response = client_for(owner).post(
-            "/api/events/", {"title": "Standup", "start": start}, format="json"
-        )
+        response = client_for(owner).post("/api/events/", {"title": "Standup"}, format="json")
         assert response.status_code == 201
         assert response.json()["owner"]["id"] == owner.id
 
-    def test_an_event_ending_before_it_starts_is_rejected(self):
+    def test_booking_fields_round_trip_including_the_assigned_lead(self):
         owner = EmployeeFactory()
-        start = timezone.now() + dt.timedelta(days=1)
-        end = start - dt.timedelta(hours=1)
+        lead = EmployeeFactory()
         response = client_for(owner).post(
             "/api/events/",
-            {"title": "Bad event", "start": start.isoformat(), "end": end.isoformat()},
+            {
+                "title": "Annual dinner",
+                "agency_name": "Acme Events",
+                "venue_name": "Grand Hall",
+                "setup": "Theatre, 200 seats",
+                "assigned_lead_id": lead.pk,
+                "booking_status": "LOCKED",
+                "alert_on": "2026-12-01",
+            },
             format="json",
         )
-        assert response.status_code == 400
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert body["agency_name"] == "Acme Events"
+        assert body["venue_name"] == "Grand Hall"
+        assert body["assigned_lead"]["id"] == lead.id
+        assert body["booking_status"] == "LOCKED"
+        assert body["alert_on"] == "2026-12-01"
 
-    def test_a_newly_created_event_exposes_its_phase(self):
+    def test_setup_is_sanitized_against_stored_xss(self):
+        # Setup is rich text from the frontend's editor, rendered back to
+        # every viewer once an event is LOCKED — a script tag must never
+        # survive to be stored, let alone rendered back to someone else.
         owner = EmployeeFactory()
-        start = (timezone.now() + dt.timedelta(days=1)).isoformat()
         response = client_for(owner).post(
-            "/api/events/", {"title": "Standup", "start": start}, format="json"
+            "/api/events/",
+            {"title": "Standup", "setup": "<p>Stage left</p><script>alert(1)</script>"},
+            format="json",
         )
-        assert response.json()["phase"] == EventPhase.UPCOMING
+        assert response.status_code == 201
+        assert "<script>" not in response.json()["setup"]
+        assert "Stage left" in response.json()["setup"]
+
+
+# --- API: budget/document/financial status are admin-only --------------------
+
+
+@pytest.mark.django_db
+class TestFinancials:
+    def test_they_are_absent_from_the_response_for_a_non_admin(self):
+        event = EventFactory()
+        body = client_for(event.owner).get(f"/api/events/{event.pk}/").json()
+        assert "budget" not in body
+        assert "document_status" not in body
+        assert "financial_status" not in body
+
+    def test_they_are_present_for_an_admin(self, admin_client):
+        client, _ = admin_client
+        event = EventFactory()
+        body = client.get(f"/api/events/{event.pk}/").json()
+        assert body["budget"] is None
+        assert body["document_status"] == ""
+        assert body["financial_status"] == ""
+
+    def test_an_admin_can_set_them_even_on_someone_elses_event(self, admin_client):
+        client, _ = admin_client
+        event = EventFactory()
+        response = client.patch(
+            f"/api/events/{event.pk}/financials/",
+            {"budget": "2000.00", "document_status": "WORK_ORDER", "financial_status": "ADVANCE"},
+            format="json",
+        )
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["budget"] == "2000.00"
+        assert body["document_status"] == "WORK_ORDER"
+        assert body["financial_status"] == "ADVANCE"
+
+    def test_the_owner_cannot_set_them_through_the_ordinary_update(self):
+        event = EventFactory()
+        response = client_for(event.owner).patch(
+            f"/api/events/{event.pk}/", {"budget": "500.00"}, format="json"
+        )
+        # Not an error: budget is read-only on the main serializer, so the
+        # request succeeds but silently leaves budget untouched.
+        assert response.status_code == 200
+        event.refresh_from_db()
+        assert event.budget is None
+
+    def test_the_owner_cannot_use_the_financials_action_either(self):
+        event = EventFactory()
+        response = client_for(event.owner).patch(
+            f"/api/events/{event.pk}/financials/", {"budget": "500.00"}, format="json"
+        )
+        assert response.status_code == 403
+
+
+# --- API: assigned lead/booking status are owner- or admin-editable ----------
+
+
+@pytest.mark.django_db
+class TestCoordination:
+    def test_the_owner_can_set_them_through_the_ordinary_update(self):
+        event = EventFactory()
+        lead = EmployeeFactory()
+        response = client_for(event.owner).patch(
+            f"/api/events/{event.pk}/",
+            {"assigned_lead_id": lead.pk, "booking_status": "LOCKED"},
+            format="json",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["assigned_lead"]["id"] == lead.id
+        assert body["booking_status"] == "LOCKED"
+
+    def test_an_admin_can_set_them_even_on_someone_elses_event(self, admin_client):
+        client, _ = admin_client
+        event = EventFactory()
+        lead = EmployeeFactory()
+        response = client.patch(
+            f"/api/events/{event.pk}/coordination/",
+            {"assigned_lead_id": lead.pk, "booking_status": "LOCKED"},
+            format="json",
+        )
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["assigned_lead"]["id"] == lead.id
+        assert body["booking_status"] == "LOCKED"
+
+    def test_the_owner_cannot_use_the_coordination_action(self):
+        event = EventFactory()
+        response = client_for(event.owner).patch(
+            f"/api/events/{event.pk}/coordination/", {"booking_status": "LOCKED"}, format="json"
+        )
+        assert response.status_code == 403
+
+    def test_an_uninvolved_employee_cannot_use_the_coordination_action(self):
+        # Not merely refused: an unlocked event owned by someone else is
+        # invisible to Bob entirely, so get_queryset() filters it out before
+        # the permission check is ever reached — a 404, not a 403.
+        bob = EmployeeFactory()
+        event = EventFactory()
+        response = client_for(bob).patch(
+            f"/api/events/{event.pk}/coordination/", {"booking_status": "LOCKED"}, format="json"
+        )
+        assert response.status_code == 404
 
 
 # --- API: retrieve-level admin audit logging (list must never log) ----------
@@ -149,13 +238,15 @@ class TestAdminViewAuditLogging:
         client_for(event.owner).get(f"/api/events/{event.pk}/")
         assert not AuditLog.objects.filter(action=AuditLog.Action.EVENT_VIEWED_BY_ADMIN).exists()
 
-    def test_a_grantee_retrieving_a_shared_event_is_never_logged(self):
-        bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        client_for(bob).get(f"/api/events/{event.pk}/")
+    def test_an_employee_retrieving_a_locked_event_they_do_not_own_is_never_logged(self):
+        # Routine, expected visibility now that locking makes an event
+        # company-wide — not an anomaly worth auditing, unlike an admin's.
+        alice = EmployeeFactory()
+        event = EventFactory(booking_status="LOCKED")
+        client_for(alice).get(f"/api/events/{event.pk}/")
         assert not AuditLog.objects.filter(action=AuditLog.Action.EVENT_VIEWED_BY_ADMIN).exists()
 
-    def test_an_admin_retrieving_a_non_shared_event_is_logged(self, admin_client):
+    def test_an_admin_retrieving_someone_elses_event_is_logged(self, admin_client):
         client, admin = admin_client
         event = EventFactory()
         response = client.get(f"/api/events/{event.pk}/")
@@ -184,95 +275,22 @@ class TestAdminViewAuditLogging:
         assert not AuditLog.objects.filter(action=AuditLog.Action.EVENT_VIEWED_BY_ADMIN).exists()
 
 
-# --- API: sharing and revoking -----------------------------------------------
-
-
-@pytest.mark.django_db
-class TestShareAndRevoke:
-    def test_the_owner_can_share_with_another_employee(self):
-        event = EventFactory()
-        bob = EmployeeFactory()
-        response = client_for(event.owner).post(
-            f"/api/events/{event.pk}/share/", {"employee": bob.pk}, format="json"
-        )
-        assert response.status_code == 200
-        assert [g["grantee"]["id"] for g in response.json()["grants"]] == [bob.pk]
-
-    def test_sharing_response_itself_reflects_the_new_state(self):
-        event = EventFactory()
-        bob = EmployeeFactory()
-        response = client_for(event.owner).post(
-            f"/api/events/{event.pk}/share/", {"employee": bob.pk}, format="json"
-        )
-        assert len(response.json()["grants"]) == 1
-
-    def test_sharing_with_an_already_shared_employee_is_rejected(self):
-        bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        response = client_for(event.owner).post(
-            f"/api/events/{event.pk}/share/", {"employee": bob.pk}, format="json"
-        )
-        assert response.status_code == 400
-
-    def test_a_grantee_cannot_share_the_event_further(self):
-        bob = EmployeeFactory()
-        carol = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        response = client_for(bob).post(
-            f"/api/events/{event.pk}/share/", {"employee": carol.pk}, format="json"
-        )
-        assert response.status_code == 403
-
-    def test_the_owner_may_revoke_any_grantee(self):
-        bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        response = client_for(event.owner).delete(f"/api/events/{event.pk}/grants/{bob.pk}/")
-        assert response.status_code == 200
-        assert event.grants.count() == 0
-
-    def test_the_revoke_response_itself_reflects_the_new_state(self):
-        bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        response = client_for(event.owner).delete(f"/api/events/{event.pk}/grants/{bob.pk}/")
-        assert response.json()["grants"] == []
-
-    def test_a_grantee_may_revoke_their_own_access(self):
-        bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
-        response = client_for(bob).delete(f"/api/events/{event.pk}/grants/{bob.pk}/")
-        assert response.status_code == 200
-
-    def test_a_grantee_cannot_revoke_another_grantees_access(self):
-        bob = EmployeeFactory()
-        carol = EmployeeFactory()
-        event = EventFactory(grantees=[bob, carol])
-        response = client_for(bob).delete(f"/api/events/{event.pk}/grants/{carol.pk}/")
-        assert response.status_code == 403
-        assert event.grants.filter(grantee=carol).exists()
-
-    def test_revoking_an_employee_with_no_grant_is_a_404(self):
-        event = EventFactory()
-        alice = EmployeeFactory()
-        response = client_for(event.owner).delete(f"/api/events/{event.pk}/grants/{alice.pk}/")
-        assert response.status_code == 404
-
-
 # --- API: write permissions (owner-only edit/delete; admin cannot override) -
 
 
 @pytest.mark.django_db
 class TestWritePermissions:
-    def test_a_grantee_cannot_edit_the_event(self):
+    def test_an_uninvolved_employee_cannot_edit_a_locked_event(self):
         bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
+        event = EventFactory(booking_status="LOCKED")
         response = client_for(bob).patch(
             f"/api/events/{event.pk}/", {"title": "Renamed"}, format="json"
         )
         assert response.status_code == 403
 
-    def test_a_grantee_cannot_delete_the_event(self):
+    def test_an_uninvolved_employee_cannot_delete_a_locked_event(self):
         bob = EmployeeFactory()
-        event = EventFactory(grantees=[bob])
+        event = EventFactory(booking_status="LOCKED")
         assert client_for(bob).delete(f"/api/events/{event.pk}/").status_code == 403
 
     def test_the_owner_can_edit_the_event(self):
@@ -282,13 +300,13 @@ class TestWritePermissions:
         )
         assert response.status_code == 200
 
-    def test_the_owner_can_cancel_the_event(self):
+    def test_the_owner_can_lock_the_event(self):
         event = EventFactory()
         response = client_for(event.owner).patch(
-            f"/api/events/{event.pk}/", {"status": "CANCELLED"}, format="json"
+            f"/api/events/{event.pk}/", {"booking_status": "LOCKED"}, format="json"
         )
         assert response.status_code == 200
-        assert response.json()["status"] == "CANCELLED"
+        assert response.json()["booking_status"] == "LOCKED"
 
     def test_the_owner_can_delete_the_event(self):
         event = EventFactory()
@@ -304,12 +322,3 @@ class TestWritePermissions:
         client, _ = admin_client
         event = EventFactory()
         assert client.delete(f"/api/events/{event.pk}/").status_code == 403
-
-    def test_an_admin_cannot_share_someone_elses_event(self, admin_client):
-        client, _ = admin_client
-        event = EventFactory()
-        carol = EmployeeFactory()
-        response = client.post(
-            f"/api/events/{event.pk}/share/", {"employee": carol.pk}, format="json"
-        )
-        assert response.status_code == 403

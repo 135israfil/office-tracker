@@ -1,25 +1,27 @@
-"""Event permissions, modeled directly on
-`vault.permissions.IsVaultEntryOwnerOrGranteeOrAdmin`.
+"""Event permissions.
 
-An admin's visibility here is, like the Vault's, a deliberately narrow,
-read-only override: an admin may always retrieve an event, but editing,
-deleting, cancelling, or managing another employee's shares is owner-only.
-
-Object-level checks here are the second gate, not the only one:
-`EventViewSet.get_queryset()` already filters to events the requester
-owns, is granted, or (as admin) can see at all.
+An admin's visibility here is mostly a read-only override — an admin may
+always retrieve an event, but editing or deleting it is owner-only — except
+for two narrow, admin-only slices that work on any event regardless of
+ownership: `financials` (budget/document/financial status) and
+`coordination` (assigned lead/booking status). Reading a non-owned event
+that is not LOCKED is refused one level up, by `EventViewSet.get_queryset()`
+filtering it out entirely — this class only ever sees events the queryset
+already decided the requester may know about.
 """
 
 from __future__ import annotations
 
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
+from .models import EventBookingStatus
+
 
 def _employee_of(request):
     return getattr(request.user, "employee", None)
 
 
-class IsEventOwnerOrGranteeOrAdmin(BasePermission):
+class IsEventOwnerOrAdmin(BasePermission):
     message = "You do not have permission to do that on this event."
 
     def has_permission(self, request, view):
@@ -30,19 +32,16 @@ class IsEventOwnerOrGranteeOrAdmin(BasePermission):
         user = request.user
         employee = _employee_of(request)
         is_owner = employee is not None and obj.owner_id == employee.id
-        is_grantee = employee is not None and obj.grants.filter(grantee=employee).exists()
 
-        if view.action == "destroy":
-            return is_owner
-        if view.action == "share":
-            return is_owner
-        if view.action == "revoke_grant":
-            removed_employee_id = view.kwargs.get("employee_id")
-            is_self = employee is not None and str(employee.id) == str(removed_employee_id)
-            return is_owner or is_self
-        if view.action in ("update", "partial_update"):
+        if view.action in ("financials", "coordination"):
+            # Admin-only, regardless of ownership — see events/models.py's module
+            # docstring. Not folded into the "update"/"partial_update" branch below:
+            # an owner who is not an admin must not be able to set these fields by
+            # sending them to the ordinary PATCH endpoint instead.
+            return user.is_admin
+        if view.action in ("destroy", "update", "partial_update"):
             return is_owner
 
         if request.method in SAFE_METHODS:
-            return is_owner or is_grantee or user.is_admin
+            return is_owner or user.is_admin or obj.booking_status == EventBookingStatus.LOCKED
         return False

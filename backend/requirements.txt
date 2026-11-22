@@ -13,3 +13,4 @@ gunicorn>=23.0,<24
 openpyxl>=3.1,<4
 argon2-cffi>=23.1,<26
 cryptography>=42,<45
+nh3>=0.2,<1

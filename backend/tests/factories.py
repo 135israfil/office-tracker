@@ -10,7 +10,7 @@ from django.utils import timezone
 from accounts.models import Role
 from computers.models import Computer, ComputerStatus, hash_token
 from employees.models import Employee, EmployeeShift, EmployeeStatus
-from events.models import Event, EventGrant
+from events.models import Event
 from screenshots.models import ScreenshotCapture
 from tasks.models import Task, TaskAssignee
 from vault.crypto import encrypt_secret
@@ -150,30 +150,9 @@ class VaultEntryGrantFactory(factory.django.DjangoModelFactory):
 class EventFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Event
-        skip_postgeneration_save = True
 
     title = factory.Sequence(lambda n: f"Event {n}")
     owner = factory.SubFactory(EmployeeFactory)
-    # One day in the future by default, so a plain EventFactory() is UPCOMING.
-    start = factory.LazyFunction(lambda: timezone.now() + dt.timedelta(days=1))
-
-    @factory.post_generation
-    def grantees(obj, create, extracted, **kwargs):
-        """Pass grantees=[employee, ...] to share on creation, granted by the
-        event's own owner — the common case in tests."""
-        if not create or not extracted:
-            return
-        for employee in extracted:
-            EventGrant.objects.create(event=obj, grantee=employee, granted_by=obj.owner)
-
-
-class EventGrantFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = EventGrant
-
-    event = factory.SubFactory(EventFactory)
-    grantee = factory.SubFactory(EmployeeFactory)
-    granted_by = factory.SubFactory(EmployeeFactory)
 
 
 class ScreenshotCaptureFactory(factory.django.DjangoModelFactory):

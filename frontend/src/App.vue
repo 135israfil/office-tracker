@@ -20,7 +20,6 @@ const links = computed(() =>
         { to: "/tasks", label: "Tasks", icon: "check-square" },
         { to: "/vault", label: "Credentials", icon: "key" },
         { to: "/events", label: "Events", icon: "calendar-event" },
-        { to: "/screenshots", label: "Screenshots", icon: "screenshot" },
         { to: "/reports", label: "Reports", icon: "chart" },
         { to: "/employees", label: "Employees", icon: "users" },
         { to: "/computers", label: "Computers", icon: "monitor" },
@@ -372,7 +371,13 @@ h4 {
 
 /* --- Forms -------------------------------------------------------------- */
 
-form label {
+/* Not just `form label`: several "detail view" pages lay fields out in a plain
+   `<div class="form-grid">` (each field autosaves on change, so there is no
+   single submit to wrap in a real <form>) — this must style those labels too,
+   or they fall back to default, unstyled, inline browser rendering. */
+form label,
+.form-grid label,
+.event-form label {
   display: flex;
   flex-direction: column;
   gap: 0.32rem;
