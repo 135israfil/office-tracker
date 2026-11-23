@@ -230,6 +230,17 @@ export const api = {
 
   // Screenshots (admin-only; the captured employee never gets API access)
   listScreenshots: (params) => request(`/screenshots/${query(params)}`),
+  // One page at a time, not request()'s auto-follow-every-page behaviour: a busy
+  // day can have hundreds of captures, and the activity page fetches a thumbnail
+  // blob per screenshot shown, so eagerly pulling every page (and every image)
+  // up front would be the expensive default for the common case to pay for the
+  // rare one. `next`, if present, is an absolute URL — pass it straight back in
+  // to fetch the following page.
+  listScreenshotsPage: (params) =>
+    fetchJson(`${BASE_URL}/screenshots/${query(params)}`, {
+      headers: { Accept: "application/json" },
+    }),
+  fetchScreenshotsPage: (url) => fetchJson(url, { headers: { Accept: "application/json" } }),
   getScreenshot: (id) => request(`/screenshots/${id}/`),
   viewScreenshotImage: (id) => fetchImageObjectUrl(`/screenshots/${id}/view/`),
 

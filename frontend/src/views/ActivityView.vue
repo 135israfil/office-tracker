@@ -13,6 +13,11 @@ const employeeId = ref(route.query.employee ?? "");
 const date = ref(route.query.date ?? today());
 const summary = ref(null);
 const screenshots = ref([]);
+// DRF's next page URL, or null once the day's captures are exhausted — drives the
+// "Load more" button rather than this page fetching (and thumbnail-ing) every page
+// up front, which a busy day's worth of captures would make expensive by default.
+const screenshotsNext = ref(null);
+const loadingMoreScreenshots = ref(false);
 // Keyed by screenshot id rather than held on each screenshot object, so a thumbnail
 // that is still loading (or failed) doesn't need a placeholder value threaded through
 // `screenshots` itself — the template just checks whether this map has an entry yet.
@@ -84,12 +89,13 @@ async function load() {
   error.value = "";
   revokeThumbnails();
   try {
-    const [daySummary, shots] = await Promise.all([
+    const [daySummary, shotsPage] = await Promise.all([
       api.activitySummary({ employee: employeeId.value, date: date.value }),
-      api.listScreenshots({ employee: employeeId.value, date: date.value }),
+      api.listScreenshotsPage({ employee: employeeId.value, date: date.value }),
     ]);
     summary.value = daySummary;
-    screenshots.value = shots.results ?? shots;
+    screenshots.value = shotsPage.results;
+    screenshotsNext.value = shotsPage.next;
     // Keep the URL in step so the page can be linked to and reloaded.
     router.replace({ query: { employee: employeeId.value, date: date.value } });
     loadThumbnails(screenshots.value);
@@ -97,8 +103,24 @@ async function load() {
     error.value = describeError(err);
     summary.value = null;
     screenshots.value = [];
+    screenshotsNext.value = null;
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadMoreScreenshots() {
+  if (!screenshotsNext.value || loadingMoreScreenshots.value) return;
+  loadingMoreScreenshots.value = true;
+  try {
+    const page = await api.fetchScreenshotsPage(screenshotsNext.value);
+    screenshots.value = screenshots.value.concat(page.results);
+    screenshotsNext.value = page.next;
+    loadThumbnails(page.results);
+  } catch (err) {
+    error.value = describeError(err);
+  } finally {
+    loadingMoreScreenshots.value = false;
   }
 }
 
@@ -305,6 +327,14 @@ onBeforeUnmount(revokeThumbnails);
       >
         No screenshots captured for this day.
       </p>
+      <button
+        v-if="screenshotsNext"
+        class="secondary"
+        :disabled="loadingMoreScreenshots"
+        @click="loadMoreScreenshots"
+      >
+        {{ loadingMoreScreenshots ? "Loading…" : "Load more" }}
+      </button>
     </template>
   </section>
 </template>
