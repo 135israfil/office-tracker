@@ -45,6 +45,31 @@ EVENT_WAKE = "WAKE"
 EVENT_LOCK = "LOCK"
 EVENT_UNLOCK = "UNLOCK"
 
+# macOS notification names this watcher listens for. NSWorkspace's own notification
+# center carries power events; screen lock/unlock is only ever announced on the
+# *distributed* notification center, which is why _run_macos below registers with two
+# different centers rather than one.
+MACOS_WORKSPACE_EVENTS = {
+    "NSWorkspaceWillPowerOffNotification": EVENT_SHUTDOWN,
+    "NSWorkspaceWillSleepNotification": EVENT_SLEEP,
+    "NSWorkspaceDidWakeNotification": EVENT_WAKE,
+}
+MACOS_DISTRIBUTED_EVENTS = {
+    "com.apple.screenIsLocked": EVENT_LOCK,
+    "com.apple.screenIsUnlocked": EVENT_UNLOCK,
+}
+
+
+def lifecycle_event_macos(notification_name: str) -> str | None:
+    """Translate one macOS notification name into a lifecycle event, or None.
+
+    Pure, same reason as lifecycle_event above: every branch is testable without a
+    real NSWorkspace/NSDistributedNotificationCenter.
+    """
+    if notification_name in MACOS_WORKSPACE_EVENTS:
+        return MACOS_WORKSPACE_EVENTS[notification_name]
+    return MACOS_DISTRIBUTED_EVENTS.get(notification_name)
+
 
 def lifecycle_event(message: int, wparam: int) -> str | None:
     """Translate one window message into a lifecycle event, or None if it is not one.
@@ -84,13 +109,14 @@ class SystemEventWatcher:
 
     @property
     def supported(self) -> bool:
-        return sys.platform == "win32"
+        return sys.platform in ("win32", "darwin")
 
     def start(self):
         if not self.supported:
-            log.info("System event watcher not started: not running on Windows.")
+            log.info("System event watcher not started: unsupported platform.")
             return False
-        self._thread = threading.Thread(target=self._run, name="system-events", daemon=True)
+        target = self._run_macos if sys.platform == "darwin" else self._run
+        self._thread = threading.Thread(target=target, name="system-events", daemon=True)
         self._thread.start()
         return True
 
@@ -185,3 +211,51 @@ class SystemEventWatcher:
                 with contextlib.suppress(Exception):
                     win32gui.DestroyWindow(self._hwnd)
                 self._hwnd = None
+
+    def _run_macos(self):  # pragma: no cover - requires a real macOS session
+        try:
+            from AppKit import NSWorkspace
+            from Foundation import NSDate, NSDistributedNotificationCenter, NSRunLoop
+        except ImportError as exc:
+            # Same degrade-not-crash contract as the Windows pywin32-missing path: the
+            # server keeps inferring shutdowns from missed heartbeats either way.
+            log.error("Lifecycle events unavailable (pyobjc missing): %s", exc)
+            return
+
+        # (center, observer) pairs, so teardown removes each observer from the same
+        # center that registered it rather than guessing.
+        registrations = []
+
+        def make_handler(event):
+            def handler(_notification):
+                self._emit(event)
+
+            return handler
+
+        workspace_center = NSWorkspace.sharedWorkspace().notificationCenter()
+        for name, event in MACOS_WORKSPACE_EVENTS.items():
+            observer = workspace_center.addObserverForName_object_queue_usingBlock_(
+                name, None, None, make_handler(event)
+            )
+            registrations.append((workspace_center, observer))
+
+        # Lock/unlock is never announced on NSWorkspace's own center — only on the
+        # distributed one, which is why this is a second registration against a
+        # different object entirely rather than two more entries in the loop above.
+        distributed_center = NSDistributedNotificationCenter.defaultCenter()
+        for name, event in MACOS_DISTRIBUTED_EVENTS.items():
+            observer = distributed_center.addObserverForName_object_queue_usingBlock_(
+                name, None, None, make_handler(event)
+            )
+            registrations.append((distributed_center, observer))
+
+        try:
+            run_loop = NSRunLoop.currentRunLoop()
+            while not self._stop.is_set():
+                run_loop.runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.5))
+        except Exception:
+            log.exception("System event watcher stopped")
+        finally:
+            for center, observer in registrations:
+                with contextlib.suppress(Exception):
+                    center.removeObserver_(observer)

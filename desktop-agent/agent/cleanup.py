@@ -34,6 +34,35 @@ log = logging.getLogger("agent.cleanup")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE = "OfficeTrackerAgent"
 
+# Written by the agent itself on first run (there is no installer-driven equivalent
+# on macOS in this first pass — see the macOS port plan), so cleanup must remove it
+# the same way it removes the Windows Run value.
+LAUNCH_AGENT_LABEL = "com.officetracker.agent"
+
+
+def _launch_agent_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
+
+
+def _remove_launch_agent() -> str:
+    """Unload and delete the LaunchAgent plist, if we are on macOS and it is there."""
+    if sys.platform != "darwin":  # pragma: no cover - macOS-only path
+        return "skipped (not macOS)"
+    import subprocess
+
+    path = _launch_agent_path()
+    if not path.exists():
+        return "absent"
+    subprocess.run(  # noqa: S603 - fixed arguments, no user input
+        ["/bin/launchctl", "unload", str(path)], capture_output=True, text=True, check=False
+    )
+    try:
+        path.unlink()
+        return "removed"
+    except OSError as exc:
+        return f"failed: {exc}"
+
+
 # A Scheduled Task was tried as a replacement for the Run value, to survive a crash and
 # not just a login — and reverted (see OfficeTracker.iss's [Run] section) because a
 # process Task Scheduler launches is denied the foreground-activation rights pystray's
@@ -118,6 +147,9 @@ def _remove_autostart() -> str:
     Running both removals unconditionally means an uninstall is correct either way,
     without needing to know which one put the machine here.
     """
+    if sys.platform == "darwin":
+        return _remove_launch_agent()
+
     task_result = _remove_scheduled_task()
     run_key_result = _remove_run_key()
     if task_result == "removed" or run_key_result == "removed":

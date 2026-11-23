@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -48,10 +49,12 @@ def data_dir() -> Path:
     override = os.environ.get(DATA_DIR_ENV)
     if override:
         return Path(override)
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "OfficeTracker"
     base = os.environ.get("PROGRAMDATA") or os.environ.get("LOCALAPPDATA")
     if base:
         return Path(base) / "OfficeTracker"
-    # Non-Windows only happens in development and CI.
+    # Non-Windows, non-macOS only happens in development and CI.
     return Path.home() / ".office-tracker"
 
 

@@ -30,6 +30,7 @@ debugging time to discover:
 from __future__ import annotations
 
 import logging
+import sys
 from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,14 @@ BROWSERS = {
     },
 }
 
+# macOS's analogue of BROWSERS above, keyed on the bundle-derived executable_name
+# application.py's _foreground_app_macos produces ("Google Chrome", not "chrome.exe").
+# The values are unused here beyond membership (is_browser) — the actual AX search in
+# _find_address_field_macos is a flat toolbar/text-field scan, not a per-browser
+# control-type table, because unlike UIA there is no name-localisation problem to work
+# around: AXRole is a fixed, non-localised string regardless of system language.
+AX_BROWSERS = {"Google Chrome", "Microsoft Edge", "Firefox", "Safari"}
+
 # Schemes that are not web browsing and must never become a website session. `file` is
 # on this list for §31 reasons, not tidiness: a local path is file-activity monitoring.
 NON_WEB_SCHEMES = {"chrome", "edge", "about", "file", "view-source", "devtools", "data"}
@@ -65,7 +74,11 @@ MAX_STALE_READS = 5
 
 
 def is_browser(executable_name: str | None) -> bool:
-    return (executable_name or "").lower() in BROWSERS
+    name = executable_name or ""
+    # BROWSERS is keyed lowercase with a Windows ".exe" suffix; AX_BROWSERS is keyed
+    # exactly as macOS's bundle-derived name comes out, so each is checked in its own
+    # native case rather than forcing one casing convention on both platforms.
+    return name.lower() in BROWSERS or name in AX_BROWSERS
 
 
 def extract_domain(raw: str | None) -> str | None:
@@ -198,12 +211,81 @@ def _find_address_bar(window, names, control_types):  # pragma: no cover - needs
     return None
 
 
+def _ax_attribute(element, name):  # pragma: no cover - needs a browser
+    import ApplicationServices as AX
+
+    err, value = AX.AXUIElementCopyAttributeValue(element, name, None)
+    if err != 0:
+        return None
+    return value
+
+
+def _find_address_field_macos(window):  # pragma: no cover - needs a browser
+    """Depth-limited search for a toolbar text field, the macOS analogue of
+    _find_address_bar above. AXRole is a fixed, non-localised string, so — unlike the
+    Windows UIA search — there is no name list to try, only a structural search: the
+    address field lives in the window's toolbar, with a flat scan of the window's own
+    children as a fallback for a browser whose toolbar is laid out unusually.
+    """
+    children = _ax_attribute(window, "AXChildren") or []
+    for child in children:
+        if _ax_attribute(child, "AXRole") != "AXToolbar":
+            continue
+        for grandchild in _ax_attribute(child, "AXChildren") or []:
+            if _ax_attribute(grandchild, "AXRole") == "AXTextField":
+                return grandchild
+    for child in children:
+        if _ax_attribute(child, "AXRole") == "AXTextField":
+            return child
+    return None
+
+
+def read_address_bar_macos(  # pragma: no cover - needs a browser
+    executable_name: str,
+) -> str | None:
+    """Read the foreground browser window's address bar via the Accessibility API.
+
+    macOS analogue of read_address_bar below: same privacy boundary (tree-reading
+    only — see scripts/check_privacy.py, which bans AX's input-synthesis and action
+    APIs by name, not by platform), same contract (raw text out, extract_domain
+    reduces it, nothing here logs the value). Needs the Accessibility permission
+    granted to this app in System Settings; without it this reads nothing and
+    returns None, the same honest answer as an unreadable window on Windows.
+    """
+    if (executable_name or "") not in AX_BROWSERS:
+        return None
+
+    try:
+        import ApplicationServices as AX
+        from AppKit import NSWorkspace
+    except ImportError as exc:
+        log.error("Browser collector unavailable: %s", exc)
+        return None
+
+    app = NSWorkspace.sharedWorkspace().frontmostApplication()
+    if app is None:
+        return None
+
+    element = AX.AXUIElementCreateApplication(app.processIdentifier())
+    window = _ax_attribute(element, "AXFocusedWindow")
+    if window is None:
+        return None
+
+    field = _find_address_field_macos(window)
+    if field is None:
+        return None
+    return _ax_attribute(field, "AXValue")
+
+
 def read_address_bar(executable_name: str) -> str | None:  # pragma: no cover - needs a browser
     """Read the foreground browser window's address bar. Windows only.
 
     Returns the raw text, which the caller must reduce with `extract_domain` before it
     goes anywhere. Nothing in this function logs the value.
     """
+    if sys.platform == "darwin":
+        return read_address_bar_macos(executable_name)
+
     spec = BROWSERS.get((executable_name or "").lower())
     if spec is None:
         return None

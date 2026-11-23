@@ -94,8 +94,47 @@ def _file_description(exe_path):  # pragma: no cover - requires a real executabl
         return None
 
 
+def _foreground_app_macos() -> ForegroundApp:  # pragma: no cover - requires a real macOS desktop
+    try:
+        from AppKit import NSWorkspace
+    except ImportError as exc:
+        log.error("Application collector unavailable: %s", exc)
+        return EMPTY
+
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if app is None:
+            # Normal between the lock screen and a window actually gaining focus.
+            return EMPTY
+
+        bundle_url = app.bundleURL()
+        # The bundle's executable name is this platform's nearest equivalent to a
+        # Windows process name ("Google Chrome.app" -> "Google Chrome"), which is what
+        # is_shell_process/is_browser key on.
+        executable_name = (
+            bundle_url.lastPathComponent().removesuffix(".app") if bundle_url else ""
+        )
+        if is_shell_process(executable_name):
+            return EMPTY
+
+        return ForegroundApp(
+            application_name=friendly_name(app.localizedName(), executable_name),
+            executable_name=executable_name,
+            # No window-title read on this platform yet (needs the Accessibility API,
+            # same permission the browser collector already asks for) — an empty
+            # signature just means the domain cache in BrowserCollector re-reads every
+            # tick instead of only on a title change, which is correct, just not free.
+            title_signature="",
+        )
+    except Exception as exc:
+        log.debug("Foreground app unavailable: %s", exc)
+        return EMPTY
+
+
 def foreground_app() -> ForegroundApp:  # pragma: no cover - requires a Windows desktop
     """The focused application, or EMPTY when there is nothing to attribute time to."""
+    if sys.platform == "darwin":
+        return _foreground_app_macos()
     if sys.platform != "win32":
         return EMPTY
 

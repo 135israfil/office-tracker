@@ -12,7 +12,10 @@ everyone has been idle since 1970. The masking below is that fix.
 from __future__ import annotations
 
 import ctypes
+import logging
 import sys
+
+log = logging.getLogger(__name__)
 
 # Tick counters are 32-bit milliseconds.
 TICK_WRAP = 0xFFFFFFFF
@@ -40,12 +43,32 @@ class _LastInputInfo(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
 
 
+def _idle_seconds_macos() -> float:  # pragma: no cover - requires a real macOS session
+    try:
+        import Quartz
+    except ImportError as exc:
+        log.error("Idle collector unavailable: %s", exc)
+        return 0.0
+
+    try:
+        return Quartz.CGEventSourceSecondsSinceLastEventType(
+            Quartz.kCGEventSourceStateCombinedSessionState, Quartz.kCGAnyInputEventType
+        )
+    except Exception:
+        # Same honest-zero convention as the Windows GetLastInputInfo failure below.
+        log.debug("CGEventSourceSecondsSinceLastEventType failed", exc_info=True)
+        return 0.0
+
+
 def idle_seconds() -> float:
     """Seconds since the last keyboard or mouse input on this session.
 
-    Returns 0.0 off Windows, which is the honest answer for a platform the agent does
-    not support: it keeps development and CI runnable without pretending to measure.
+    Returns 0.0 off Windows and macOS, which is the honest answer for a platform the
+    agent does not support: it keeps development and CI runnable without pretending to
+    measure.
     """
+    if sys.platform == "darwin":
+        return _idle_seconds_macos()
     if sys.platform != "win32":
         return 0.0
 

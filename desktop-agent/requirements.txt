@@ -15,3 +15,10 @@ pywin32>=306; sys_platform == "win32"
 # Tree-reading only — see scripts/check_privacy.py, which rejects its input-synthesis
 # and bitmap APIs outright.
 uiautomation>=2.0.20; sys_platform == "win32"
+# macOS equivalents of pywin32's win32gui/win32process/win32api and uiautomation:
+# AppKit for foreground-app/system-event notifications, Quartz for idle time,
+# ApplicationServices for the Accessibility (AX) tree read the browser collector needs.
+# Tree-reading only, same boundary as uiautomation above.
+pyobjc-framework-Cocoa>=10.3; sys_platform == "darwin"
+pyobjc-framework-Quartz>=10.3; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices>=10.3; sys_platform == "darwin"

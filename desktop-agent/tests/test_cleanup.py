@@ -74,6 +74,29 @@ class TestCleanup:
         assert calls == [True]
         assert result["actions"]["autostart"] == "removed"
 
+    def test_on_macos_the_autostart_entry_removal_dispatches_to_the_launch_agent(
+        self, install, monkeypatch
+    ):
+        """On macOS there is no Run key or Scheduled Task to remove - the equivalent
+        is a LaunchAgent plist, and cleanup must reach for that one instead."""
+        monkeypatch.setattr("agent.cleanup.sys.platform", "darwin")
+        calls = []
+        monkeypatch.setattr(
+            "agent.cleanup._remove_launch_agent", lambda: calls.append(True) or "removed"
+        )
+        monkeypatch.setattr(
+            "agent.cleanup._remove_run_key", lambda: (_ for _ in ()).throw(AssertionError())
+        )
+        monkeypatch.setattr(
+            "agent.cleanup._remove_scheduled_task",
+            lambda: (_ for _ in ()).throw(AssertionError()),
+        )
+
+        result = cleanup()
+
+        assert calls == [True]
+        assert result["actions"]["autostart"] == "removed"
+
     def test_the_device_token_is_cleared_from_the_credential_store(self, install):
         _, cleared = install
 

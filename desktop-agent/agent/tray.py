@@ -14,6 +14,7 @@ import contextlib
 import functools
 import logging
 import queue
+import sys
 import threading
 
 log = logging.getLogger(__name__)
@@ -123,10 +124,16 @@ def _raise_above_everything(window):
     y = (window.winfo_screenheight() - height) // 2
     window.geometry(f"{width}x{height}+{x}+{y}")
     window.deiconify()
-    window.update()
-    window.iconify()
-    window.update()
-    window.deiconify()
+    if sys.platform == "win32":
+        # The iconify/deiconify dance below is a Windows-specific foreground-lock
+        # workaround (see the module docstring above) — unverified whether macOS
+        # needs it too, so it stays off there rather than risking a window that opens
+        # in a transient iconified state on a desktop with no foreground lock to work
+        # around in the first place.
+        window.update()
+        window.iconify()
+        window.update()
+        window.deiconify()
     window.attributes("-topmost", True)
     window.lift()
     # grab_set() (called next, by both callers) needs the window to already be viewable —

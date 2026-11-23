@@ -1,0 +1,38 @@
+name: Build macOS agent
+
+# Builds the desktop agent's .app/.dmg on a macOS runner, since PyInstaller cannot
+# cross-compile a macOS build from Windows or Linux. Triggerable manually and on
+# changes to the agent itself, so the macOS build is kept honest without needing a
+# physical Mac in the loop.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "desktop-agent/**"
+      - ".github/workflows/build-macos-agent.yml"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop-agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements-dev.txt
+
+      - name: Build
+        run: ./installer/build_macos.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: office-tracker-agent-macos
+          path: desktop-agent/dist/OfficeTrackerSetup-*.dmg
+          if-no-files-found: error

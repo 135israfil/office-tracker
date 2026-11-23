@@ -24,7 +24,7 @@ def capture_screenshot() -> bytes | None:
     screenshot loop down any more than a bad idle reading takes heartbeat
     down.
     """
-    if sys.platform != "win32":
+    if sys.platform not in ("win32", "darwin"):
         return None
 
     try:
@@ -37,6 +37,15 @@ def capture_screenshot() -> bytes | None:
         image = ImageGrab.grab()
     except Exception:
         log.exception("Screenshot capture failed")
+        return None
+
+    if sys.platform == "darwin" and image is None:
+        # PIL has no way to tell "Screen Recording permission not granted" apart from
+        # any other capture failure here — this is the whole fix, not a partial one.
+        log.warning(
+            "Screenshot capture returned nothing; check Screen Recording permission "
+            "for this app in System Settings > Privacy & Security."
+        )
         return None
 
     buffer = io.BytesIO()

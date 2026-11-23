@@ -18,20 +18,37 @@ from agent.version import __version__  # noqa: E402
 
 block_cipher = None
 
+# PyInstaller finds imports by walking them, and these are reached dynamically:
+# keyring picks its platform backend at runtime, and pystray and PIL load their
+# platform implementations the same way. Without them the build succeeds and the
+# agent fails on the first machine it touches. On macOS, AppKit/Quartz/Foundation/
+# ApplicationServices are also only ever imported inside try/except blocks (see
+# collectors/idle.py, application.py, browser.py, system.py) specifically so a
+# missing pyobjc degrades instead of crashing — which is exactly the shape PyInstaller's
+# static import walk cannot see through, so they have to be named here explicitly too.
+if sys.platform == "darwin":
+    hiddenimports = [
+        "keyring.backends.macOS",
+        "pystray._darwin",
+        "PIL._tkinter_finder",
+        "AppKit",
+        "Quartz",
+        "Foundation",
+        "ApplicationServices",
+    ]
+else:
+    hiddenimports = [
+        "keyring.backends.Windows",
+        "pystray._win32",
+        "PIL._tkinter_finder",
+    ]
+
 analysis = Analysis(
     ["entry.py"],
     pathex=[str(Path(SPECPATH).parent)],
     binaries=[],
     datas=[],
-    # PyInstaller finds imports by walking them, and these three are reached
-    # dynamically: keyring picks its Windows backend at runtime, and pystray and PIL
-    # load their platform implementations the same way. Without them the build succeeds
-    # and the agent fails on the first machine it touches.
-    hiddenimports=[
-        "keyring.backends.Windows",
-        "pystray._win32",
-        "PIL._tkinter_finder",
-    ],
+    hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
     # §31 is enforced structurally, and that includes the build: nothing capable of
@@ -65,13 +82,10 @@ analysis = Analysis(
 
 pyz = PYZ(analysis.pure, analysis.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    analysis.scripts,
-    analysis.binaries,
-    analysis.zipfiles,
-    analysis.datas,
-    [],
+# version_info.txt is a Windows PE version resource (see make_version_info.py) and has
+# no meaning to EXE() on macOS, where version info instead goes on BUNDLE()'s
+# info_plist below — so it is passed only on the platform that can use it.
+exe_kwargs = dict(
     name="OfficeTrackerAgent",
     debug=False,
     bootloader_ignore_signals=False,
@@ -81,8 +95,50 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
-    codesign_identity=None,
+    codesign_identity=None,  # No Developer ID yet; macOS still ad-hoc-signs arm64.
     entitlements_file=None,
-    icon=str(Path(SPECPATH) / "agent.ico") if (Path(SPECPATH) / "agent.ico").exists() else None,
-    version=str(Path(SPECPATH) / "version_info.txt"),
 )
+if sys.platform == "darwin":
+    icns = Path(SPECPATH) / "agent.icns"
+    if icns.exists():
+        exe_kwargs["icon"] = str(icns)
+else:
+    ico = Path(SPECPATH) / "agent.ico"
+    if ico.exists():
+        exe_kwargs["icon"] = str(ico)
+    exe_kwargs["version"] = str(Path(SPECPATH) / "version_info.txt")
+
+exe = EXE(
+    pyz,
+    analysis.scripts,
+    analysis.binaries,
+    analysis.zipfiles,
+    analysis.datas,
+    [],
+    **exe_kwargs,
+)
+
+if sys.platform == "darwin":
+    # LSUIElement: a menu-bar app with no Dock icon — tray.py's own docstring on why
+    # this is a visible tray app and not a hidden service applies equally here; LSUIElement
+    # keeps it out of the Dock and Cmd+Tab switcher without making it invisible, the same
+    # "people know tracking is on, but it isn't in their way" balance the Windows build
+    # strikes by living in the system tray rather than as a window.
+    app = BUNDLE(
+        exe,
+        name="OfficeTrackerAgent.app",
+        bundle_identifier="com.officetracker.agent",
+        info_plist={
+            "CFBundleShortVersionString": __version__,
+            "CFBundleVersion": __version__,
+            "LSUIElement": True,
+            "NSAppleEventsUsageDescription": (
+                "Office Tracker reads the active browser's address bar to record "
+                "which website is in use."
+            ),
+            "NSScreenCaptureUsageDescription": (
+                "Office Tracker periodically captures a screenshot as part of "
+                "employer-configured activity tracking."
+            ),
+        },
+    )
