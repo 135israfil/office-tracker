@@ -147,11 +147,15 @@ class TestIdle:
 
 class TestScreenshotCollector:
     def test_capture_behaves_correctly_for_the_current_platform(self):
-        # CI runs on Linux, where None is the honest answer; a real Windows box (this
-        # sandbox included) actually captures something — either way the collector
-        # must not explode, and must not silently return the wrong kind of answer.
+        # Linux CI (this sandbox's own test run) is where None is the honest answer:
+        # neither Windows nor macOS, so the collector must refuse rather than guess.
+        # A real Windows box, and a macOS one (CI included — the macOS runner has a
+        # virtual display and ImageGrab works there with no permission prompt in a
+        # non-interactive session), both actually capture something — either way the
+        # collector must not explode, and must not silently return the wrong kind of
+        # answer.
         result = capture_screenshot()
-        if sys.platform == "win32":
+        if sys.platform in ("win32", "darwin"):
             assert isinstance(result, bytes) and result.startswith(b"\x89PNG")
         else:
             assert result is None
