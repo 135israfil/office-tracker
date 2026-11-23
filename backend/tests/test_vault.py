@@ -133,6 +133,32 @@ class TestCreate:
         assert response.status_code == 400
 
 
+# --- API: searching the list ---------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSearch:
+    def test_search_matches_the_title(self):
+        owner = EmployeeFactory()
+        wanted = VaultEntryFactory(owner=owner, title="AWS console")
+        VaultEntryFactory(owner=owner, title="Figma")
+        body = client_for(owner).get("/api/vault-entries/?search=aws").json()
+        assert [e["id"] for e in body["results"]] == [wanted.pk]
+
+    def test_search_matches_the_username(self):
+        owner = EmployeeFactory()
+        wanted = VaultEntryFactory(owner=owner, username="svc-deploy")
+        VaultEntryFactory(owner=owner, username="svc-backup")
+        body = client_for(owner).get("/api/vault-entries/?search=deploy").json()
+        assert [e["id"] for e in body["results"]] == [wanted.pk]
+
+    def test_search_never_exposes_an_entry_outside_the_isolation_rule(self):
+        alice = EmployeeFactory()
+        VaultEntryFactory(title="Shared secret name")  # someone else's entry
+        body = client_for(alice).get("/api/vault-entries/?search=shared").json()
+        assert body["count"] == 0
+
+
 # --- API: the reveal action and its conditional audit logging ---------------
 
 
@@ -297,6 +323,15 @@ class TestWritePermissions:
         )
         entry.refresh_from_db()
         assert decrypt_secret(entry.secret_ciphertext) == "test-password-123"
+
+    def test_updating_with_a_password_replaces_the_secret(self):
+        entry = VaultEntryFactory()
+        response = client_for(entry.owner).patch(
+            f"/api/vault-entries/{entry.pk}/", {"password": "new-password-456"}, format="json"
+        )
+        assert response.status_code == 200
+        entry.refresh_from_db()
+        assert decrypt_secret(entry.secret_ciphertext) == "new-password-456"
 
     def test_the_owner_can_delete_the_entry(self):
         entry = VaultEntryFactory()

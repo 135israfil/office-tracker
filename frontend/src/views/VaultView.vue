@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 
 import { api } from "@/api/client";
+import MultiSelectDropdown from "@/components/MultiSelectDropdown.vue";
 import { describeError } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth";
 
@@ -9,6 +10,7 @@ const auth = useAuthStore();
 
 const entries = ref([]);
 const employees = ref([]);
+const search = ref("");
 const loading = ref(false);
 const error = ref("");
 const formError = ref("");
@@ -27,7 +29,9 @@ const form = ref(blankForm());
 // Sharing with yourself is meaningless — you already own it — so leave
 // yourself out of the picker rather than let it be selected and ignored.
 const shareableEmployees = computed(() =>
-  employees.value.filter((employee) => employee.id !== auth.user?.employee?.id),
+  employees.value
+    .filter((employee) => employee.id !== auth.user?.employee?.id)
+    .map((employee) => ({ value: employee.id, label: `${employee.name} (${employee.employee_id})` })),
 );
 
 async function load() {
@@ -35,7 +39,7 @@ async function load() {
   error.value = "";
   try {
     const [list, employeeList] = await Promise.all([
-      api.listVaultEntries(),
+      api.listVaultEntries({ search: search.value }),
       api.listAssignableEmployees(),
     ]);
     entries.value = list.results ?? list;
@@ -106,19 +110,11 @@ onMounted(load);
       </label>
       <label class="span">
         Share with
-        <select
+        <MultiSelectDropdown
           v-model="form.grantees"
-          multiple
-          size="5"
-        >
-          <option
-            v-for="employee in shareableEmployees"
-            :key="employee.id"
-            :value="employee.id"
-          >
-            {{ employee.name }} ({{ employee.employee_id }})
-          </option>
-        </select>
+          :options="shareableEmployees"
+          placeholder="No one yet — optional"
+        />
       </label>
       <p
         v-if="formError"
@@ -140,6 +136,23 @@ onMounted(load);
     >
       {{ error }}
     </p>
+
+    <div class="row filters">
+      <label>
+        Search
+        <input
+          v-model="search"
+          placeholder="Search title or username"
+          @keyup.enter="load"
+        >
+      </label>
+      <button
+        :disabled="loading"
+        @click="load"
+      >
+        {{ loading ? "Loading…" : "Search" }}
+      </button>
+    </div>
 
     <div class="table-scroll">
       <table>

@@ -48,11 +48,19 @@ class VaultEntryViewSet(viewsets.ModelViewSet):
         )
         user = self.request.user
         if user.is_admin:
-            return queryset
-        employee = getattr(user, "employee", None)
-        if employee is None:
-            return VaultEntry.objects.none()
-        return queryset.filter(Q(owner=employee) | Q(grants__grantee=employee)).distinct()
+            pass
+        else:
+            employee = getattr(user, "employee", None)
+            if employee is None:
+                return VaultEntry.objects.none()
+            queryset = queryset.filter(Q(owner=employee) | Q(grants__grantee=employee)).distinct()
+
+        # Title/username only — the secret itself is never searchable, the same
+        # reason it is never returned by list/retrieve (see serializers.py).
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(Q(title__icontains=search) | Q(username__icontains=search))
+        return queryset
 
     def get_throttles(self):
         # A decrypt action gets its own tighter scope rather than inheriting the

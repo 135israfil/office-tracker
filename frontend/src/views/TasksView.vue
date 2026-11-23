@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 
 import { api } from "@/api/client";
+import MultiSelectDropdown from "@/components/MultiSelectDropdown.vue";
 import { dateOnly, describeError } from "@/lib/format";
 
 const tasks = ref([]);
@@ -21,6 +22,16 @@ const blankForm = () => ({
 const form = ref(blankForm());
 
 const STATUSES = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
+
+// Unlike Vault's "Share with", assigning yourself is a real, intended use
+// case here (see docs/designs/task-tracking.md), so the current user stays
+// in this list rather than being filtered out.
+const assignableOptions = computed(() =>
+  employees.value.map((employee) => ({
+    value: employee.id,
+    label: `${employee.name} (${employee.employee_id})`,
+  })),
+);
 
 // Reuses this app's existing semantic badge colours (active/inactive/warn) rather than
 // inventing one colour per status, so a 5-value status field still reads at a glance.
@@ -122,19 +133,11 @@ onMounted(load);
       </label>
       <label class="span">
         Assignees
-        <select
+        <MultiSelectDropdown
           v-model="form.assignees"
-          multiple
-          size="5"
-        >
-          <option
-            v-for="employee in employees"
-            :key="employee.id"
-            :value="employee.id"
-          >
-            {{ employee.name }} ({{ employee.employee_id }})
-          </option>
-        </select>
+          :options="assignableOptions"
+          placeholder="Unassigned — optional"
+        />
       </label>
       <p
         v-if="formError"

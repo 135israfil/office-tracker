@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api/client";
+import MultiSelectDropdown from "@/components/MultiSelectDropdown.vue";
 import { dateOnly, describeError } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth";
 
@@ -21,7 +22,7 @@ const saveError = ref("");
 const assigneeError = ref("");
 const subtaskError = ref("");
 
-const newAssigneeId = ref("");
+const newAssigneeIds = ref([]);
 const blankSubtaskForm = () => ({
   title: "",
   description: "",
@@ -38,6 +39,20 @@ const isCreator = computed(() => task.value && myEmployeeId.value === task.value
 // A sub-task cannot itself have sub-tasks, so that section only makes sense for a
 // root task — the same one-level rule the backend enforces.
 const isRootTask = computed(() => task.value && task.value.parent_stub === null);
+
+const assignableOptions = computed(() =>
+  employees.value.map((employee) => ({
+    value: employee.id,
+    label: `${employee.name} (${employee.employee_id})`,
+  })),
+);
+// Already-assigned people drop out of the "add" picker — adding again would
+// just 400 as "Already assigned."
+const addableOptions = computed(() => {
+  if (!task.value) return [];
+  const alreadyAssigned = new Set(task.value.assignees.map((a) => a.employee.id));
+  return assignableOptions.value.filter((option) => !alreadyAssigned.has(option.value));
+});
 
 async function load() {
   loading.value = true;
@@ -72,10 +87,12 @@ async function save(patch) {
 
 async function addAssignee() {
   assigneeError.value = "";
-  if (!newAssigneeId.value) return;
+  if (!newAssigneeIds.value.length) return;
   try {
-    task.value = await api.addTaskAssignee(task.value.id, newAssigneeId.value);
-    newAssigneeId.value = "";
+    for (const employeeId of newAssigneeIds.value) {
+      task.value = await api.addTaskAssignee(task.value.id, employeeId);
+    }
+    newAssigneeIds.value = [];
   } catch (err) {
     assigneeError.value = describeError(err);
   }
@@ -234,18 +251,11 @@ onMounted(load);
         class="row"
         @submit.prevent="addAssignee"
       >
-        <select v-model="newAssigneeId">
-          <option value="">
-            Add an assignee…
-          </option>
-          <option
-            v-for="employee in employees"
-            :key="employee.id"
-            :value="employee.id"
-          >
-            {{ employee.name }} ({{ employee.employee_id }})
-          </option>
-        </select>
+        <MultiSelectDropdown
+          v-model="newAssigneeIds"
+          :options="addableOptions"
+          placeholder="Add an assignee…"
+        />
         <button type="submit">
           Add
         </button>
@@ -299,19 +309,11 @@ onMounted(load);
           </label>
           <label class="span">
             Assignees
-            <select
+            <MultiSelectDropdown
               v-model="subtaskForm.assignees"
-              multiple
-              size="5"
-            >
-              <option
-                v-for="employee in employees"
-                :key="employee.id"
-                :value="employee.id"
-              >
-                {{ employee.name }} ({{ employee.employee_id }})
-              </option>
-            </select>
+              :options="assignableOptions"
+              placeholder="Unassigned — optional"
+            />
           </label>
           <p
             v-if="subtaskError"

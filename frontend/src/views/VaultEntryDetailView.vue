@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api/client";
+import MultiSelectDropdown from "@/components/MultiSelectDropdown.vue";
 import { describeError } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth";
 
@@ -21,10 +22,22 @@ const revealedPassword = ref("");
 const revealing = ref(false);
 const revealError = ref("");
 
-const newGranteeId = ref("");
+const newPassword = ref("");
+const passwordError = ref("");
+
+const newGranteeIds = ref([]);
 
 const myEmployeeId = computed(() => auth.user?.employee?.id ?? null);
 const isOwner = computed(() => entry.value && myEmployeeId.value === entry.value.owner.id);
+// Already-shared people drop out of the picker — sharing again would just
+// 400 as "Already shared with that employee."
+const shareableEmployees = computed(() => {
+  if (!entry.value) return [];
+  const alreadyShared = new Set(entry.value.grants.map((grant) => grant.grantee.id));
+  return employees.value
+    .filter((employee) => employee.id !== myEmployeeId.value && !alreadyShared.has(employee.id))
+    .map((employee) => ({ value: employee.id, label: `${employee.name} (${employee.employee_id})` }));
+});
 
 async function load() {
   loading.value = true;
@@ -66,12 +79,28 @@ async function reveal() {
   }
 }
 
+async function updatePassword() {
+  passwordError.value = "";
+  if (!newPassword.value) return;
+  try {
+    entry.value = await api.updateVaultEntry(entry.value.id, { password: newPassword.value });
+    newPassword.value = "";
+    // The just-replaced password is stale the moment it's set — never leave
+    // it sitting on screen looking current.
+    revealedPassword.value = "";
+  } catch (err) {
+    passwordError.value = describeError(err);
+  }
+}
+
 async function share() {
   shareError.value = "";
-  if (!newGranteeId.value) return;
+  if (!newGranteeIds.value.length) return;
   try {
-    entry.value = await api.shareVaultEntry(entry.value.id, newGranteeId.value);
-    newGranteeId.value = "";
+    for (const granteeId of newGranteeIds.value) {
+      entry.value = await api.shareVaultEntry(entry.value.id, granteeId);
+    }
+    newGranteeIds.value = [];
   } catch (err) {
     shareError.value = describeError(err);
   }
@@ -197,6 +226,28 @@ onMounted(load);
         {{ revealError }}
       </p>
 
+      <form
+        v-if="isOwner"
+        class="row"
+        @submit.prevent="updatePassword"
+      >
+        <input
+          v-model="newPassword"
+          type="password"
+          placeholder="New password"
+          required
+        >
+        <button type="submit">
+          Update password
+        </button>
+      </form>
+      <p
+        v-if="passwordError"
+        class="error small"
+      >
+        {{ passwordError }}
+      </p>
+
       <h4>Shared with</h4>
       <ul class="bars">
         <li
@@ -228,18 +279,11 @@ onMounted(load);
         class="row"
         @submit.prevent="share"
       >
-        <select v-model="newGranteeId">
-          <option value="">
-            Share with…
-          </option>
-          <option
-            v-for="employee in employees"
-            :key="employee.id"
-            :value="employee.id"
-          >
-            {{ employee.name }} ({{ employee.employee_id }})
-          </option>
-        </select>
+        <MultiSelectDropdown
+          v-model="newGranteeIds"
+          :options="shareableEmployees"
+          placeholder="Share with…"
+        />
         <button type="submit">
           Share
         </button>
