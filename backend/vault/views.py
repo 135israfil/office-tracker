@@ -69,7 +69,18 @@ class VaultEntryViewSet(viewsets.ModelViewSet):
             raise drf_serializers.ValidationError(
                 "This account is not linked to an employee record."
             )
-        serializer.save(owner=employee)
+
+        # Optional initial grantees, the same shape and convention
+        # tasks.views.TaskViewSet.perform_create uses for "assignees" — lets the
+        # frontend share a new entry at creation time, not only afterward.
+        raw_ids = self.request.data.get("grantees") or []
+        grantees = list(Employee.objects.filter(pk__in=raw_ids))
+        if len(grantees) != len(set(raw_ids)):
+            raise drf_serializers.ValidationError({"grantees": "One or more employees not found."})
+
+        entry = serializer.save(owner=employee)
+        for grantee in grantees:
+            VaultEntryGrant.objects.create(entry=entry, grantee=grantee, granted_by=employee)
 
     def _reserialize(self, entry):
         """Re-fetch an entry fresh for the response after changing its grants.

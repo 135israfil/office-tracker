@@ -18,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from employees.models import Employee, EmployeeStatus
+from notifications.services import notify
 
 from .models import Task, TaskAssignee
 from .permissions import IsTaskParticipantOrAdmin
@@ -110,6 +111,22 @@ class TaskViewSet(viewsets.ModelViewSet):
         task = serializer.save(created_by=employee)
         for assignee in assignees:
             TaskAssignee.objects.create(task=task, employee=assignee, assigned_by=employee)
+            if assignee != employee:
+                notify(assignee, f"You were assigned to '{task.title}'", url=f"/tasks/{task.id}")
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        task = serializer.save()
+        if task.status != old_status:
+            actor = getattr(self.request.user, "employee", None)
+            recipients = {task.created_by, *(a.employee for a in task.assignees.all())}
+            recipients.discard(actor)
+            for recipient in recipients:
+                notify(
+                    recipient,
+                    f"'{task.title}' status changed to {task.status}",
+                    url=f"/tasks/{task.id}",
+                )
 
     def _reserialize(self, task):
         """Re-fetch a task fresh for the response after changing its assignees.
@@ -145,6 +162,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         assigned_by = getattr(request.user, "employee", None) or task.created_by
         TaskAssignee.objects.create(task=task, employee=employee, assigned_by=assigned_by)
+        if employee != assigned_by:
+            notify(employee, f"You were assigned to '{task.title}'", url=f"/tasks/{task.id}")
         return self._reserialize(task)
 
     @action(detail=True, methods=["delete"], url_path="assignees/(?P<employee_id>[^/.]+)")

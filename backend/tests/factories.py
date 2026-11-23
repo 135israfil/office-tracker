@@ -11,6 +11,7 @@ from accounts.models import Role
 from computers.models import Computer, ComputerStatus, hash_token
 from employees.models import Employee, EmployeeShift, EmployeeStatus
 from events.models import Event
+from notifications.models import Notification
 from screenshots.models import ScreenshotCapture
 from tasks.models import Task, TaskAssignee
 from vault.crypto import encrypt_secret
@@ -153,6 +154,14 @@ class EventFactory(factory.django.DjangoModelFactory):
 
     title = factory.Sequence(lambda n: f"Event {n}")
     owner = factory.SubFactory(EmployeeFactory)
+
+
+class NotificationFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Notification
+
+    recipient = factory.SubFactory(EmployeeFactory)
+    message = factory.Sequence(lambda n: f"Notification {n}")
 
 
 class ScreenshotCaptureFactory(factory.django.DjangoModelFactory):

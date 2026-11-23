@@ -11,6 +11,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from core.models import AuditLog
+from notifications.models import Notification
 from tests.factories import AdminFactory, EmployeeFactory, EventFactory
 
 # --- API: visibility -----------------------------------------------------------
@@ -322,3 +323,92 @@ class TestWritePermissions:
         client, _ = admin_client
         event = EventFactory()
         assert client.delete(f"/api/events/{event.pk}/").status_code == 403
+
+
+# --- Notifications: owner and assigned lead, once an event becomes LOCKED ----
+
+
+@pytest.mark.django_db
+class TestLockNotifications:
+    def test_creating_an_event_already_locked_notifies_the_assigned_lead(self):
+        owner = EmployeeFactory()
+        lead = EmployeeFactory()
+        client_for(owner).post(
+            "/api/events/",
+            {"title": "Gala", "assigned_lead_id": lead.pk, "booking_status": "LOCKED"},
+            format="json",
+        )
+        notification = Notification.objects.get(recipient=lead)
+        assert "Gala" in notification.message
+
+    def test_creating_it_does_not_notify_the_owner_themselves(self):
+        owner = EmployeeFactory()
+        client_for(owner).post(
+            "/api/events/", {"title": "Gala", "booking_status": "LOCKED"}, format="json"
+        )
+        assert not Notification.objects.exists()
+
+    def test_the_owner_locking_it_later_notifies_the_assigned_lead(self):
+        lead = EmployeeFactory()
+        event = EventFactory(assigned_lead=lead)
+        client_for(event.owner).patch(
+            f"/api/events/{event.pk}/", {"booking_status": "LOCKED"}, format="json"
+        )
+        notification = Notification.objects.get(recipient=lead)
+        assert event.title in notification.message
+
+    def test_an_admin_locking_it_via_coordination_notifies_owner_and_lead(self, admin_client):
+        client, _ = admin_client
+        lead = EmployeeFactory()
+        event = EventFactory(assigned_lead=lead)
+        client.patch(
+            f"/api/events/{event.pk}/coordination/", {"booking_status": "LOCKED"}, format="json"
+        )
+        recipients = set(Notification.objects.values_list("recipient_id", flat=True))
+        assert recipients == {event.owner_id, lead.pk}
+
+    def test_moving_an_already_locked_event_to_done_does_not_renotify(self):
+        lead = EmployeeFactory()
+        event = EventFactory(assigned_lead=lead, booking_status="LOCKED")
+        client_for(event.owner).patch(
+            f"/api/events/{event.pk}/", {"booking_status": "DONE"}, format="json"
+        )
+        assert not Notification.objects.exists()
+
+    def test_a_non_status_edit_of_a_locked_event_does_not_renotify(self):
+        lead = EmployeeFactory()
+        event = EventFactory(assigned_lead=lead, booking_status="LOCKED")
+        client_for(event.owner).patch(
+            f"/api/events/{event.pk}/", {"title": "Renamed"}, format="json"
+        )
+        assert not Notification.objects.exists()
+
+
+# --- Management command: alert-date reminders --------------------------------
+
+
+@pytest.mark.django_db
+class TestSendEventAlerts:
+    def test_notifies_owner_and_lead_on_the_alert_date(self):
+        from django.core.management import call_command
+
+        lead = EmployeeFactory()
+        event = EventFactory(assigned_lead=lead, alert_on="2026-12-01")
+        call_command("send_event_alerts", "--date=2026-12-01")
+        recipients = set(Notification.objects.values_list("recipient_id", flat=True))
+        assert recipients == {event.owner_id, lead.pk}
+
+    def test_an_event_whose_alert_date_is_not_today_is_skipped(self):
+        from django.core.management import call_command
+
+        EventFactory(alert_on="2026-12-02")
+        call_command("send_event_alerts", "--date=2026-12-01")
+        assert not Notification.objects.exists()
+
+    def test_running_it_twice_the_same_day_does_not_double_send(self):
+        from django.core.management import call_command
+
+        event = EventFactory(alert_on="2026-12-01")
+        call_command("send_event_alerts", "--date=2026-12-01")
+        call_command("send_event_alerts", "--date=2026-12-01")
+        assert Notification.objects.filter(recipient=event.owner).count() == 1

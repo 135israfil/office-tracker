@@ -22,6 +22,7 @@ from computers.agent_views import (
 from computers.views import ComputerViewSet
 from employees.views import EmployeeViewSet, LeaveAdjustmentViewSet
 from events.views import EventViewSet
+from notifications.views import NotificationViewSet
 from screenshots.views import ScreenshotCaptureViewSet
 from tasks.views import AssignableEmployeesView, TaskViewSet
 from vault.views import VaultEntryViewSet
@@ -37,6 +38,7 @@ router.register("tasks", TaskViewSet, basename="task")
 router.register("vault-entries", VaultEntryViewSet, basename="vault-entry")
 router.register("events", EventViewSet, basename="event")
 router.register("screenshots", ScreenshotCaptureViewSet, basename="screenshot")
+router.register("notifications", NotificationViewSet, basename="notification")
 
 urlpatterns = [
     path("admin/", admin.site.urls),

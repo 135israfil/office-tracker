@@ -25,6 +25,14 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    // Both roles use this, like /tasks and /events: everyone gets their own
+    // notifications, not just admins.
+    path: "/notifications",
+    name: "notifications",
+    component: () => import("@/views/NotificationsView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
     path: "/activity",
     name: "activity",
     component: () => import("@/views/ActivityView.vue"),

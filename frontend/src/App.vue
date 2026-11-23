@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
+import { api } from "@/api/client";
 import NavIcon from "@/components/NavIcon.vue";
 import { useAuthStore } from "@/stores/auth";
 
@@ -14,6 +15,7 @@ const links = computed(() =>
   auth.isAdmin
     ? [
         { to: "/dashboard", label: "Dashboard", icon: "grid" },
+        { to: "/notifications", label: "Notifications", icon: "bell" },
         { to: "/attendance", label: "Attendance", icon: "clock" },
         { to: "/admin/attendance", label: "All attendance", icon: "calendar" },
         { to: "/activity", label: "Activity", icon: "pulse" },
@@ -27,12 +29,68 @@ const links = computed(() =>
       ]
     : [
         { to: "/my", label: "My dashboard", icon: "home" },
+        { to: "/notifications", label: "Notifications", icon: "bell" },
         { to: "/attendance", label: "Attendance", icon: "clock" },
         { to: "/tasks", label: "Tasks", icon: "check-square" },
         { to: "/vault", label: "Credentials", icon: "key" },
         { to: "/events", label: "Events", icon: "calendar-event" },
       ],
 );
+
+// Polling, not a push subscription: this app has no service worker or push
+// infrastructure (see backend/notifications). While signed in, check for new
+// notifications every 30s; anything unread that wasn't there last poll fires
+// a real browser notification, not just the in-app badge below.
+const unreadCount = ref(0);
+const seenIds = new Set();
+let pollTimer = null;
+let seeded = false;
+
+async function pollNotifications() {
+  let unread;
+  try {
+    unread = await api.listNotifications({ unread: "true" });
+  } catch {
+    return;
+  }
+  const rows = unread.results ?? unread;
+  unreadCount.value = rows.length;
+
+  if (!seeded) {
+    // The baseline: notifications already unread before this tab started
+    // polling are shown in the badge, not popped as a toast.
+    rows.forEach((row) => seenIds.add(row.id));
+    seeded = true;
+    return;
+  }
+  for (const row of rows) {
+    if (seenIds.has(row.id)) continue;
+    seenIds.add(row.id);
+    if (window.Notification?.permission === "granted") {
+      new Notification("Office Management", { body: row.message });
+    }
+  }
+}
+
+watch(
+  () => auth.isAuthenticated,
+  (authenticated) => {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    seenIds.clear();
+    seeded = false;
+    unreadCount.value = 0;
+    if (!authenticated) return;
+
+    if (window.Notification && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    pollNotifications();
+    pollTimer = setInterval(pollNotifications, 30000);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => clearInterval(pollTimer));
 
 const displayName = computed(
   () => auth.user?.employee?.name || auth.user?.email || "Signed in",
@@ -73,6 +131,10 @@ async function signOut() {
         >
           <NavIcon :name="link.icon" />
           <span>{{ link.label }}</span>
+          <span
+            v-if="link.to === '/notifications' && unreadCount"
+            class="navlink__badge"
+          >{{ unreadCount }}</span>
         </RouterLink>
       </nav>
 
@@ -247,6 +309,16 @@ body {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+}
+.navlink__badge {
+  margin-left: auto;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
 }
 
 .sidebar__foot {

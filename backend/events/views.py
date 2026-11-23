@@ -18,6 +18,7 @@ from rest_framework.response import Response
 
 from core.audit import record
 from core.models import AuditLog
+from notifications.services import notify
 
 from .models import Event, EventBookingStatus
 from .permissions import IsEventOwnerOrAdmin
@@ -44,7 +45,28 @@ class EventViewSet(viewsets.ModelViewSet):
             raise drf_serializers.ValidationError(
                 "This account is not linked to an employee record."
             )
-        serializer.save(owner=employee)
+        event = serializer.save(owner=employee)
+        self._notify_if_locked(event, old_status=None)
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.booking_status
+        event = serializer.save()
+        self._notify_if_locked(event, old_status)
+
+    def _notify_if_locked(self, event, old_status):
+        """Owner and assigned lead, once an event becomes LOCKED — whether that
+        happens at creation or on a later edit, and regardless of which of the
+        three write paths (create, ordinary update, `coordination`) caused it."""
+        if (
+            old_status == EventBookingStatus.LOCKED
+            or event.booking_status != EventBookingStatus.LOCKED
+        ):
+            return
+        actor = getattr(self.request.user, "employee", None)
+        recipients = {event.owner, event.assigned_lead}
+        recipients.discard(actor)
+        for recipient in recipients:
+            notify(recipient, f"Event '{event.title}' is now Locked", url=f"/events/{event.id}")
 
     def retrieve(self, request, *args, **kwargs):
         event = self.get_object()
@@ -74,7 +96,9 @@ class EventViewSet(viewsets.ModelViewSet):
         branch — this action does not re-check ownership. The owner still
         sets these same two fields through the ordinary `update`."""
         event = self.get_object()
+        old_status = event.booking_status
         serializer = EventCoordinationSerializer(event, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        self._notify_if_locked(event, old_status)
         return Response(self.get_serializer(event).data)

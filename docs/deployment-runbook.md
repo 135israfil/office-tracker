@@ -219,9 +219,9 @@ so a change of hostname means a rebuild, not a config edit.
 
 ## 5. Scheduled jobs
 
-Three jobs, none optional. Without them: nobody is ever marked absent, dead PCs show as
-online forever, and activity is never deleted — the last of which is a broken promise to
-employees, not just a growing table.
+Four jobs, none optional. Without them: nobody is ever marked absent, dead PCs show as
+online forever, activity is never deleted — a broken promise to employees, not just a
+growing table — and an event's alert date passes with no reminder sent.
 
 ```cron
 # Close sessions for machines that stopped answering. Every minute.
@@ -232,6 +232,10 @@ employees, not just a growing table.
 
 # Delete activity past the retention window. After the absentee job.
 30 20 * * * cd /srv/office-management/backend && .venv/bin/python manage.py purge_activity
+
+# Notify an event's owner/lead on its alert date. Just after midnight office-local;
+# 00:05 Dhaka = 18:00 UTC previous day.
+5 18 * * * cd /srv/office-management/backend && .venv/bin/python manage.py send_event_alerts
 ```
 
 Cron does not read your `.env`; use `systemd` timers with `EnvironmentFile`, or source it
@@ -340,7 +344,7 @@ device is disabled server-side, which is why that step comes first.
 - [ ] HSTS raised only after the certificate is confirmed
 - [ ] Office coordinates, radius, timezone, weekend days and retention set and reviewed
 - [ ] An admin account exists and can sign in; a test employee can check in
-- [ ] All three cron jobs installed, and their environment verified
+- [ ] All four cron jobs installed, and their environment verified
 - [ ] `purge_activity --dry-run` run and its output understood
 - [ ] Backups running, **and a restore tested** (`backup-and-restore.md` §5)
 - [ ] Agent installed and enrolled on one machine end to end before the fleet

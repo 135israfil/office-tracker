@@ -112,6 +112,26 @@ class TestCreate:
         assert entry.owner_id == owner.id
         assert decrypt_secret(entry.secret_ciphertext) == "s3cr3t"
 
+    def test_creating_an_entry_can_share_it_immediately(self):
+        owner = EmployeeFactory()
+        bob = EmployeeFactory()
+        response = client_for(owner).post(
+            "/api/vault-entries/",
+            {"title": "Vendor portal", "password": "s3cr3t", "grantees": [bob.pk]},
+            format="json",
+        )
+        assert response.status_code == 201, response.json()
+        assert [g["grantee"]["id"] for g in response.json()["grants"]] == [bob.pk]
+
+    def test_creating_an_entry_with_an_unknown_grantee_is_rejected(self):
+        owner = EmployeeFactory()
+        response = client_for(owner).post(
+            "/api/vault-entries/",
+            {"title": "Vendor portal", "password": "s3cr3t", "grantees": [99999]},
+            format="json",
+        )
+        assert response.status_code == 400
+
 
 # --- API: the reveal action and its conditional audit logging ---------------
 

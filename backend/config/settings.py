@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "vault",
     "events",
     "screenshots",
+    "notifications",
 ]
 
 MIDDLEWARE = [

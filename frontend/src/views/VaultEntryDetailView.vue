@@ -154,7 +154,7 @@ onMounted(load);
           URL
           <input
             v-model="entry.url"
-            type="url"
+            placeholder="https://example.com"
             :disabled="!isOwner"
             @change="save({ url: entry.url })"
           >

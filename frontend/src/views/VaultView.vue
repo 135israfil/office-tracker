@@ -1,24 +1,45 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { api } from "@/api/client";
 import { describeError } from "@/lib/format";
+import { useAuthStore } from "@/stores/auth";
+
+const auth = useAuthStore();
 
 const entries = ref([]);
+const employees = ref([]);
 const loading = ref(false);
 const error = ref("");
 const formError = ref("");
 const showForm = ref(false);
 
-const blankForm = () => ({ title: "", username: "", password: "", url: "", notes: "" });
+const blankForm = () => ({
+  title: "",
+  username: "",
+  password: "",
+  url: "",
+  notes: "",
+  grantees: [],
+});
 const form = ref(blankForm());
+
+// Sharing with yourself is meaningless — you already own it — so leave
+// yourself out of the picker rather than let it be selected and ignored.
+const shareableEmployees = computed(() =>
+  employees.value.filter((employee) => employee.id !== auth.user?.employee?.id),
+);
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const list = await api.listVaultEntries();
+    const [list, employeeList] = await Promise.all([
+      api.listVaultEntries(),
+      api.listAssignableEmployees(),
+    ]);
     entries.value = list.results ?? list;
+    employees.value = employeeList;
   } catch (err) {
     error.value = describeError(err);
   } finally {
@@ -69,16 +90,35 @@ onMounted(load);
         type="password"
         required
       ></label>
-      <label>URL<input
-        v-model="form.url"
-        type="url"
-      ></label>
+      <label>
+        URL
+        <input
+          v-model="form.url"
+          placeholder="https://example.com"
+        >
+      </label>
       <label class="span">
         Notes
         <textarea
           v-model="form.notes"
           rows="2"
         />
+      </label>
+      <label class="span">
+        Share with
+        <select
+          v-model="form.grantees"
+          multiple
+          size="5"
+        >
+          <option
+            v-for="employee in shareableEmployees"
+            :key="employee.id"
+            :value="employee.id"
+          >
+            {{ employee.name }} ({{ employee.employee_id }})
+          </option>
+        </select>
       </label>
       <p
         v-if="formError"

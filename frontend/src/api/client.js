@@ -236,4 +236,9 @@ export const api = {
   listHolidays: (params) => request(`/holidays/${query(params)}`),
   createHoliday: (body) => request("/holidays/", { method: "POST", body }),
   deleteHoliday: (id) => request(`/holidays/${id}/`, { method: "DELETE" }),
+
+  // Notifications (in-app only — no push/email; see backend/notifications)
+  listNotifications: (params) => request(`/notifications/${query(params)}`),
+  markNotificationRead: (id) => request(`/notifications/${id}/read/`, { method: "POST" }),
+  markAllNotificationsRead: () => request("/notifications/read_all/", { method: "POST" }),
 };

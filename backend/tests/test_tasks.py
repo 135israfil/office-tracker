@@ -10,6 +10,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 
+from notifications.models import Notification
 from tasks.models import Task, TaskStatus, task_is_overdue
 from tests.factories import AdminFactory, EmployeeFactory, TaskFactory
 
@@ -254,3 +255,55 @@ class TestStatusAndLifecycle:
             format="json",
         )
         assert response.status_code == 201
+
+
+# --- Notifications ---------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestNotifications:
+    def test_assigning_at_creation_notifies_the_assignee(self):
+        creator = EmployeeFactory()
+        bob = EmployeeFactory()
+        client_for(creator).post(
+            "/api/tasks/",
+            {"title": "New task", "assignees": [bob.pk]},
+            format="json",
+        )
+        notification = Notification.objects.get(recipient=bob)
+        assert "New task" in notification.message
+
+    def test_assigning_yourself_at_creation_does_not_notify_you(self):
+        creator = EmployeeFactory()
+        client_for(creator).post(
+            "/api/tasks/",
+            {"title": "New task", "assignees": [creator.pk]},
+            format="json",
+        )
+        assert not Notification.objects.exists()
+
+    def test_add_assignee_notifies_the_added_employee(self):
+        task = TaskFactory()
+        bob = EmployeeFactory()
+        client_for(task.created_by).post(
+            f"/api/tasks/{task.pk}/add_assignee/", {"employee": bob.pk}, format="json"
+        )
+        notification = Notification.objects.get(recipient=bob)
+        assert task.title in notification.message
+
+    def test_a_status_change_notifies_the_creator_and_other_assignees(self):
+        bob = EmployeeFactory()
+        carol = EmployeeFactory()
+        task = TaskFactory(assignees=[bob, carol])
+        client_for(bob).patch(
+            f"/api/tasks/{task.pk}/", {"status": TaskStatus.IN_PROGRESS}, format="json"
+        )
+        recipients = set(Notification.objects.values_list("recipient_id", flat=True))
+        assert recipients == {task.created_by_id, carol.pk}
+        assert bob.pk not in recipients
+
+    def test_a_non_status_edit_does_not_notify_anyone(self):
+        bob = EmployeeFactory()
+        task = TaskFactory(assignees=[bob])
+        client_for(bob).patch(f"/api/tasks/{task.pk}/", {"title": "Renamed"}, format="json")
+        assert not Notification.objects.exists()
