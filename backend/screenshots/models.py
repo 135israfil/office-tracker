@@ -22,11 +22,22 @@ from django.db import models
 from computers.models import Computer
 from employees.models import Employee
 
-# A second, dedicated FileSystemStorage instance, never the project's `default`
-# storage: this directory is never served by whitenoise/STATIC_ROOT or any
-# public URL. The only way to read a file back is the `view` action, which
-# audits every call.
-screenshot_storage = FileSystemStorage(location=settings.SCREENSHOT_STORAGE_ROOT)
+
+# A dedicated FileSystemStorage, never the project's `default` storage: this
+# directory is never served by whitenoise/STATIC_ROOT or any public URL — the
+# only way to read a file back is the `view` action (see views.py).
+#
+# A callable, not a FileSystemStorage instance, is passed to FileField's
+# `storage=` below. Django's migration serializer freezes an instance's
+# constructor kwargs as literal values, which would bake today's resolved
+# SCREENSHOT_STORAGE_ROOT path into the migration file permanently — every
+# other machine (CI, production, another developer) has a different value for
+# that setting, so `makemigrations --check` would never stop seeing a pending
+# "alter field" migration no one actually wants to apply. A callable is instead
+# stored as a dotted reference and re-evaluated every time Django needs a
+# storage instance, so the migration never encodes a path at all.
+def get_screenshot_storage():
+    return FileSystemStorage(location=settings.SCREENSHOT_STORAGE_ROOT)
 
 
 class ScreenshotCapture(models.Model):
@@ -50,7 +61,7 @@ class ScreenshotCapture(models.Model):
         related_name="screenshot_captures",
     )
     captured_at = models.DateTimeField()
-    file = models.FileField(upload_to="screenshots/%Y/%m/%d/", storage=screenshot_storage)
+    file = models.FileField(upload_to="screenshots/%Y/%m/%d/", storage=get_screenshot_storage)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
