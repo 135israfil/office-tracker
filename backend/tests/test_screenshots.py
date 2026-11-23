@@ -94,7 +94,11 @@ class TestViewing:
     def test_an_admin_can_view_the_image(self, admin_client):
         client, _ = admin_client
         capture = ScreenshotCaptureFactory()
-        response = client.get(f"/api/screenshots/{capture.pk}/view/")
+        # HTTP_ACCEPT matches what the frontend's fetchImageObjectUrl actually sends
+        # (client.js) - DRF's content negotiation 406s the whole request before the
+        # view body runs if no configured renderer can satisfy it, which plain
+        # client.get() (no explicit Accept) does not exercise.
+        response = client.get(f"/api/screenshots/{capture.pk}/view/", HTTP_ACCEPT="image/*")
         assert response.status_code == 200
         assert b"".join(response.streaming_content) == b"not a real png, just test bytes"
 

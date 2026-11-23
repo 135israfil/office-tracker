@@ -14,7 +14,7 @@ ordinary per-user throttle every other endpoint gets, until retention
 from __future__ import annotations
 
 from django.http import FileResponse
-from rest_framework import viewsets
+from rest_framework import renderers, viewsets
 from rest_framework.decorators import action
 
 from activities.queries import day_window
@@ -24,6 +24,25 @@ from attendance.models import AppSettings
 from .models import ScreenshotCapture
 from .permissions import IsAdminOnly
 from .serializers import ScreenshotCaptureSerializer
+
+
+class PNGRenderer(renderers.BaseRenderer):
+    """Lets DRF's content negotiation accept the `view` action's `Accept:
+    image/*` request — the view returns a raw `FileResponse`, which bypasses
+    DRF's render step entirely, but content negotiation runs *before* the view
+    body does and 406s the whole request first if no configured renderer
+    matches. The project's only other renderer is JSONRenderer (settings.py's
+    DEFAULT_RENDERER_CLASSES), which an image/* Accept header can never match.
+    `render()` is never actually called for that reason.
+    """
+
+    media_type = "image/png"
+    format = "png"
+    charset = None
+    render_style = "binary"
+
+    def render(self, data, media_type=None, renderer_context=None):
+        return data
 
 
 class ScreenshotCaptureViewSet(viewsets.ReadOnlyModelViewSet):
@@ -44,7 +63,7 @@ class ScreenshotCaptureViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(captured_at__gte=window_start, captured_at__lt=window_end)
         return queryset
 
-    @action(detail=True, methods=["get"])
+    @action(detail=True, methods=["get"], renderer_classes=[PNGRenderer])
     def view(self, request, pk=None):
         capture = self.get_object()
         return FileResponse(capture.file.open("rb"), content_type="image/png")
