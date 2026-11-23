@@ -104,11 +104,14 @@ export async function download(path) {
   return name;
 }
 
-// A screenshot's image is served only by the admin-only, audit-logged `view`
-// action — never a plain <img src>, which would bypass the session cookie
-// rules `request()` relies on and leave no way to surface a 403/404. Returns
-// an object URL the caller is responsible for revoking once the <img> using
-// it unmounts.
+// A screenshot's image is served only by the admin-only `view` action — never
+// a plain <img src>, because the session cookie this API relies on is
+// SameSite=Lax and the frontend/backend are different origins: a browser
+// won't attach a Lax cookie to a cross-site <img> subresource request (only
+// to a top-level navigation), so an <img> tag would just 403. A `fetch` with
+// `credentials: "include"` isn't subject to that restriction. Returns an
+// object URL the caller is responsible for revoking once the <img> using it
+// unmounts.
 export async function fetchImageObjectUrl(path) {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: "GET",

@@ -1,15 +1,18 @@
 """Screenshot serialization.
 
-Deliberately never includes the image or a URL to it — `file` is absent from
-every field list below. The dedicated `view` action (see `views.py`) is the
-only place the actual image bytes are ever returned.
+`image_url` points at the dedicated `view` action (`views.py`) rather than
+embedding the file itself: the actual bytes still only ever come from that
+one authenticated, admin-only endpoint, this just gives the list/detail
+response a link to it instead of making the frontend guess the URL shape.
+Viewing is no longer audit-logged (reversed 2026-11-23, by request — admins
+review captures as freely as any other report until retention deletes them),
+so there is no view-count/last-viewer metadata to surface here either.
 """
 
 from __future__ import annotations
 
 from rest_framework import serializers
 
-from core.models import AuditLog
 from employees.models import Employee
 
 from .models import ScreenshotCapture
@@ -40,8 +43,7 @@ class _EmployeeStubSerializer(serializers.ModelSerializer):
 class ScreenshotCaptureSerializer(serializers.ModelSerializer):
     employee = _EmployeeStubSerializer(read_only=True)
     computer_name = serializers.CharField(source="computer.computer_name", read_only=True)
-    view_count = serializers.SerializerMethodField()
-    last_viewed_by = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ScreenshotCapture
@@ -50,24 +52,12 @@ class ScreenshotCaptureSerializer(serializers.ModelSerializer):
             "employee",
             "computer_name",
             "captured_at",
-            "view_count",
-            "last_viewed_by",
+            "image_url",
             "created_at",
         ]
         read_only_fields = fields
 
-    def _view_logs(self, obj):
-        return AuditLog.objects.filter(
-            action=AuditLog.Action.SCREENSHOT_VIEWED_BY_ADMIN,
-            target_type="ScreenshotCapture",
-            target_id=str(obj.pk),
-        ).order_by("-created_at")
-
-    def get_view_count(self, obj):
-        return self._view_logs(obj).count()
-
-    def get_last_viewed_by(self, obj):
-        entry = self._view_logs(obj).first()
-        if entry is None:
-            return None
-        return {"admin": entry.actor.email if entry.actor else None, "at": entry.created_at}
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        url = f"/api/screenshots/{obj.pk}/view/"
+        return request.build_absolute_uri(url) if request else url

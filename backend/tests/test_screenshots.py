@@ -1,6 +1,8 @@
-"""Screenshot capture: admin-only visibility, unconditional view audit logging
-(the one place this feature deliberately differs from the Vault's conditional
-logging, since there is no owner/grantee tier here at all), and retention.
+"""Screenshot capture: admin-only visibility and retention.
+
+Viewing used to be unconditionally audit-logged; that was reversed
+2026-11-23 by request, so admins can review captures as freely as any other
+report until retention deletes them (see TestViewing below).
 """
 
 from __future__ import annotations
@@ -59,11 +61,12 @@ class TestVisibility:
         assert response.status_code == 200
         assert "file" not in response.json()
 
-    def test_the_list_never_includes_the_image_or_a_url_to_it(self, admin_client):
+    def test_the_list_includes_a_view_link_but_never_the_raw_file_field(self, admin_client):
         client, _ = admin_client
-        ScreenshotCaptureFactory()
-        body = client.get("/api/screenshots/").json()
-        assert "file" not in body["results"][0]
+        capture = ScreenshotCaptureFactory()
+        row = client.get("/api/screenshots/").json()["results"][0]
+        assert "file" not in row
+        assert row["image_url"].endswith(f"/api/screenshots/{capture.pk}/view/")
 
     def test_listing_can_be_filtered_to_one_employee_and_day(self, admin_client):
         """The activity page asks for exactly the employee and day it is already
@@ -83,11 +86,11 @@ class TestVisibility:
         assert [row["id"] for row in body["results"]] == [wanted.pk]
 
 
-# --- API: the `view` action and unconditional audit logging -------------------
+# --- API: the `view` action -----------------------------------------------
 
 
 @pytest.mark.django_db
-class TestViewAndAuditLogging:
+class TestViewing:
     def test_an_admin_can_view_the_image(self, admin_client):
         client, _ = admin_client
         capture = ScreenshotCaptureFactory()
@@ -95,30 +98,21 @@ class TestViewAndAuditLogging:
         assert response.status_code == 200
         assert b"".join(response.streaming_content) == b"not a real png, just test bytes"
 
-    def test_every_view_is_logged_unconditionally(self, admin_client):
-        client, admin = admin_client
+    def test_viewing_is_not_audit_logged(self, admin_client):
+        """Reversed 2026-11-23, by request: admins review captures as freely as
+        any other report, with no per-view record and no special rate limit."""
+        client, _ = admin_client
         capture = ScreenshotCaptureFactory()
         client.get(f"/api/screenshots/{capture.pk}/view/")
-        log = AuditLog.objects.get(action=AuditLog.Action.SCREENSHOT_VIEWED_BY_ADMIN)
-        assert log.actor_id == admin.pk
-        assert log.target_type == "ScreenshotCapture"
-        assert log.target_id == str(capture.pk)
-
-    def test_the_view_count_and_last_viewer_are_surfaced_in_the_metadata(self, admin_client):
-        client, admin = admin_client
-        capture = ScreenshotCaptureFactory()
         client.get(f"/api/screenshots/{capture.pk}/view/")
-        detail = client.get(f"/api/screenshots/{capture.pk}/").json()
-        assert detail["view_count"] == 1
-        assert detail["last_viewed_by"]["admin"] == admin.email
+        assert not AuditLog.objects.filter(
+            action=AuditLog.Action.SCREENSHOT_VIEWED_BY_ADMIN
+        ).exists()
 
     def test_a_non_admin_cannot_view_the_image(self):
         capture = ScreenshotCaptureFactory()
         response = client_for(capture.employee).get(f"/api/screenshots/{capture.pk}/view/")
         assert response.status_code == 403
-        assert not AuditLog.objects.filter(
-            action=AuditLog.Action.SCREENSHOT_VIEWED_BY_ADMIN
-        ).exists()
 
 
 # --- Retention ------------------------------------------------------------------

@@ -9,8 +9,8 @@ no interval semantics — grafting it on would reintroduce exactly the
 per-sample row growth that schema was built to avoid.
 
 Admin/HR only, by design — unlike every other feature in this codebase,
-the employee a capture is *of* never sees the image itself, only that it
-was viewed and by whom (see `views.py`).
+the employee a capture is *of* never sees the image itself at all
+(see `views.py`).
 """
 
 from __future__ import annotations

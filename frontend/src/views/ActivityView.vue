@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api/client";
@@ -13,8 +13,34 @@ const employeeId = ref(route.query.employee ?? "");
 const date = ref(route.query.date ?? today());
 const summary = ref(null);
 const screenshots = ref([]);
+// Keyed by screenshot id rather than held on each screenshot object, so a thumbnail
+// that is still loading (or failed) doesn't need a placeholder value threaded through
+// `screenshots` itself — the template just checks whether this map has an entry yet.
+const thumbnails = ref({});
 const loading = ref(false);
 const error = ref("");
+
+function revokeThumbnails() {
+  for (const url of Object.values(thumbnails.value)) URL.revokeObjectURL(url);
+  thumbnails.value = {};
+}
+
+async function loadThumbnails(shots) {
+  // One blob fetch per screenshot, in parallel — there is no audit log or special
+  // rate limit on the view action to economise against (see client.js), only the
+  // ordinary per-user API throttle every other endpoint already gets.
+  await Promise.all(
+    shots.map(async (shot) => {
+      try {
+        thumbnails.value[shot.id] = await api.viewScreenshotImage(shot.id);
+      } catch {
+        // A single broken thumbnail (e.g. purged by retention between the list
+        // call and this one) just stays absent — the tile falls back to its
+        // time/computer caption rather than losing the whole grid.
+      }
+    }),
+  );
+}
 
 const activity = computed(() => summary.value?.activity ?? null);
 const attendance = computed(() => summary.value?.attendance ?? null);
@@ -56,6 +82,7 @@ async function load() {
   if (!employeeId.value) return;
   loading.value = true;
   error.value = "";
+  revokeThumbnails();
   try {
     const [daySummary, shots] = await Promise.all([
       api.activitySummary({ employee: employeeId.value, date: date.value }),
@@ -65,6 +92,7 @@ async function load() {
     screenshots.value = shots.results ?? shots;
     // Keep the URL in step so the page can be linked to and reloaded.
     router.replace({ query: { employee: employeeId.value, date: date.value } });
+    loadThumbnails(screenshots.value);
   } catch (err) {
     error.value = describeError(err);
     summary.value = null;
@@ -84,6 +112,8 @@ onMounted(async () => {
     error.value = describeError(err);
   }
 });
+
+onBeforeUnmount(revokeThumbnails);
 </script>
 
 <template>
@@ -255,6 +285,16 @@ onMounted(async () => {
           :to="`/screenshots/${shot.id}`"
           class="screenshot-tile"
         >
+          <img
+            v-if="thumbnails[shot.id]"
+            :src="thumbnails[shot.id]"
+            alt=""
+            class="screenshot-thumb"
+          >
+          <div
+            v-else
+            class="screenshot-thumb screenshot-thumb--placeholder"
+          />
           <span class="time">{{ clockTime(shot.captured_at, timezone) }}</span>
           <span class="muted small">{{ shot.computer_name }}</span>
         </RouterLink>
@@ -338,20 +378,39 @@ onMounted(async () => {
 }
 .screenshot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.75rem;
   margin: 0.5rem 0 1rem;
 }
 .screenshot-tile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
-  padding: 0.75rem 0.25rem;
+  gap: 0.3rem;
+  padding: 0.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   text-decoration: none;
   color: inherit;
+}
+.screenshot-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.screenshot-thumb--placeholder {
+  animation: screenshot-thumb-pulse 1.2s ease-in-out infinite;
+}
+@keyframes screenshot-thumb-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 .screenshot-tile .time {
   font-variant-numeric: tabular-nums;

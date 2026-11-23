@@ -12,34 +12,27 @@ const loading = ref(false);
 const error = ref("");
 
 const imageUrl = ref("");
-const viewing = ref(false);
-const viewError = ref("");
+const imageError = ref("");
 
 async function load() {
   loading.value = true;
   error.value = "";
+  imageError.value = "";
   revokeImage();
   try {
     shot.value = await api.getScreenshot(route.params.id);
+    imageUrl.value = await api.viewScreenshotImage(shot.value.id);
   } catch (err) {
-    error.value = describeError(err);
+    if (shot.value) {
+      // The metadata loaded fine; only the image itself failed (e.g. purged by
+      // retention a moment ago) — keep showing the metadata rather than the
+      // page's generic error state.
+      imageError.value = describeError(err);
+    } else {
+      error.value = describeError(err);
+    }
   } finally {
     loading.value = false;
-  }
-}
-
-async function viewImage() {
-  viewError.value = "";
-  viewing.value = true;
-  try {
-    imageUrl.value = await api.viewScreenshotImage(shot.value.id);
-    // Viewing just logged an admin reveal against this capture — refresh the
-    // metadata so the view count/last-viewed line on screen isn't stale.
-    shot.value = await api.getScreenshot(shot.value.id);
-  } catch (err) {
-    viewError.value = describeError(err);
-  } finally {
-    viewing.value = false;
   }
 }
 
@@ -74,10 +67,7 @@ onUnmounted(revokeImage);
         {{ dateTime(shot.captured_at) }}
       </p>
       <p class="muted small">
-        Viewed {{ shot.view_count }} time(s){{
-          shot.last_viewed_by ? ` — last by ${shot.last_viewed_by.admin} (${dateTime(shot.last_viewed_by.at)})` : ""
-        }}.
-        {{ shot.employee.name }} cannot see this image, but can see that it was viewed.
+        {{ shot.employee.name }} cannot see this image.
       </p>
 
       <img
@@ -86,18 +76,14 @@ onUnmounted(revokeImage);
         alt="Captured screenshot"
         class="screenshot-image"
       >
-      <button
-        v-else
-        :disabled="viewing"
-        @click="viewImage"
-      >
-        {{ viewing ? "Loading…" : "View screenshot" }}
-      </button>
       <p
-        v-if="viewError"
+        v-else-if="imageError"
         class="error small"
       >
-        {{ viewError }}
+        {{ imageError }}
+      </p>
+      <p v-else>
+        Loading image…
       </p>
     </template>
   </section>

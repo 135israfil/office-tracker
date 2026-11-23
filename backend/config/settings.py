@@ -229,10 +229,6 @@ REST_FRAMEWORK = {
         # entry a session can reach); the blanket 2000/hour "user" rate was never
         # meant to cover it.
         "vault-reveal": "30/min",
-        # Viewing raw screen content is the same class of action for the same
-        # reason — a rate limit an admin would never hit by accident, but that
-        # bounds scripted bulk-viewing of a whole fleet's captures.
-        "screenshot-view": "30/min",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 25,
