@@ -29,7 +29,10 @@ jobs:
         run: python3 -m pip install -r requirements-dev.txt
 
       - name: Build
-        run: ./installer/build_macos.sh
+        # Invoked via bash rather than ./installer/build_macos.sh: this repo is
+        # checked out on Windows, which does not track the executable bit, so the
+        # file arrives at git without +x regardless of what's set locally.
+        run: bash installer/build_macos.sh
 
       - uses: actions/upload-artifact@v4
         with:
