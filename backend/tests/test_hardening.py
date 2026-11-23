@@ -388,13 +388,14 @@ class TestDeploymentGuards:
         with pytest.raises(RuntimeError, match="DJANGO_SECRET_KEY"):
             self._load_settings(monkeypatch, DJANGO_DEBUG="false")
 
-    def test_production_defaults_are_secure_without_any_configuration(self, monkeypatch):
+    def test_production_defaults_are_secure_without_any_configuration(self, monkeypatch, tmp_path):
         """A deploy that sets only DEBUG and a key must still be hardened."""
         settings_module = self._load_settings(
             monkeypatch,
             DJANGO_DEBUG="false",
             DJANGO_SECRET_KEY=REALISTIC_SECRET_KEY,
             VAULT_ENCRYPTION_KEY=REALISTIC_VAULT_ENCRYPTION_KEY,
+            SCREENSHOT_STORAGE_ROOT=str(tmp_path / "screenshots"),
         )
 
         assert settings_module.SESSION_COOKIE_SECURE is True
@@ -406,18 +407,19 @@ class TestDeploymentGuards:
         assert settings_module.SECURE_HSTS_PRELOAD is False
         assert settings_module.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
 
-    def test_hsts_can_be_disabled_for_a_first_deploy(self, monkeypatch):
+    def test_hsts_can_be_disabled_for_a_first_deploy(self, monkeypatch, tmp_path):
         """A wrong HSTS header is remembered by every visitor and cannot be withdrawn."""
         settings_module = self._load_settings(
             monkeypatch,
             DJANGO_DEBUG="false",
             DJANGO_SECRET_KEY=REALISTIC_SECRET_KEY,
             VAULT_ENCRYPTION_KEY=REALISTIC_VAULT_ENCRYPTION_KEY,
+            SCREENSHOT_STORAGE_ROOT=str(tmp_path / "screenshots"),
             DJANGO_SECURE_HSTS_SECONDS="0",
         )
         assert settings_module.SECURE_HSTS_SECONDS == 0
 
-    def test_django_deploy_checks_pass_in_a_production_configuration(self, monkeypatch):
+    def test_django_deploy_checks_pass_in_a_production_configuration(self, monkeypatch, tmp_path):
         """`manage.py check --deploy` is the check nobody remembers to run."""
         from django.core.management import call_command
         from django.test import override_settings
@@ -427,6 +429,7 @@ class TestDeploymentGuards:
             DJANGO_DEBUG="false",
             DJANGO_SECRET_KEY=REALISTIC_SECRET_KEY,
             VAULT_ENCRYPTION_KEY=REALISTIC_VAULT_ENCRYPTION_KEY,
+            SCREENSHOT_STORAGE_ROOT=str(tmp_path / "screenshots"),
         )
 
         overrides = {

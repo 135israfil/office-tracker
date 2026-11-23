@@ -286,11 +286,21 @@ SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 SESSION_COOKIE_AGE = int(env("DJANGO_SESSION_COOKIE_AGE", 12 * 60 * 60))
 SESSION_SAVE_EVERY_REQUEST = True
 
+# Always on, not just `if not DEBUG`: without it, Django has no way to know a request
+# arrived over HTTPS once it has passed through a reverse proxy (Cloudflare here), and
+# treats every request as plain HTTP regardless of what the browser actually used. That
+# makes `request.build_absolute_uri()` — DRF's pagination `next`/`previous` links, and
+# this project's own `image_url` fields — emit `http://` links that a browser serving
+# the page over HTTPS then blocks outright as mixed content. Harmless when DEBUG is on
+# and there is no proxy in front (the X-Forwarded-Proto header simply never arrives),
+# so there is no dev-mode reason to gate it the way the HTTPS-enforcement settings below
+# are.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", True)
-    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
     # HSTS tells the browser never to try this host over HTTP again. That is exactly
     # why it defaults to a year here and why it must not be switched on before HTTPS
