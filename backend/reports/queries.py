@@ -99,12 +99,18 @@ def attendance_rows(filters):
 
 
 class _Totals:
-    """Running totals for one employee, over one day or over the whole range."""
+    """Running totals for one employee, over one day or over the whole range.
 
-    __slots__ = ("pc_on", "active", "idle", "applications", "websites", "sessions")
+    There is no `pc_on` total here: see activities/queries.py's summarise() for why
+    "PC on" is reported as active + idle rather than the raw PC_ON session span — a
+    heartbeat confirms the machine was reachable, but a gap in the sampler's own
+    ACTIVE/IDLE coverage has no business being counted as "on" just because something
+    else briefly answered the door.
+    """
+
+    __slots__ = ("active", "idle", "applications", "websites", "sessions")
 
     def __init__(self):
-        self.pc_on = 0
         self.active = 0
         self.idle = 0
         self.applications: dict[str, int] = {}
@@ -113,9 +119,7 @@ class _Totals:
 
     def add(self, session, seconds):
         self.sessions += 1
-        if session.activity_type == ActivityType.PC_ON:
-            self.pc_on += seconds
-        elif session.activity_type == ActivityType.ACTIVE:
+        if session.activity_type == ActivityType.ACTIVE:
             self.active += seconds
         elif session.activity_type == ActivityType.IDLE:
             self.idle += seconds
@@ -129,7 +133,6 @@ class _Totals:
                 self.websites[domain] = self.websites.get(domain, 0) + seconds
 
     def merge(self, other):
-        self.pc_on += other.pc_on
         self.active += other.active
         self.idle += other.idle
         self.sessions += other.sessions
@@ -160,7 +163,7 @@ def _row(employee, day, totals: _Totals) -> dict:
         # None when the rows are grouped by employee: the row covers the whole range,
         # and putting one of its dates in the column would be a lie about the others.
         "date": day,
-        "pc_on_seconds": totals.pc_on,
+        "pc_on_seconds": totals.active + totals.idle,
         "active_seconds": totals.active,
         "idle_seconds": totals.idle,
         "top_application": _top(totals.applications),

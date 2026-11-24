@@ -307,8 +307,10 @@ class TestActivityReport:
     def test_a_session_crossing_midnight_is_split_between_the_two_dates(
         self, office, employee, computer
     ):
-        # 22:00 to 02:00 local: two hours on each date, not four on one of them.
-        session(employee, computer, ActivityType.PC_ON, local(22, 0), local(2, 0, NEXT_DAY))
+        # 22:00 to 02:00 local: two hours on each date, not four on one of them. ACTIVE,
+        # not PC_ON: "PC on" is reported as active+idle (see summarise()), and the
+        # day-splitting behaviour under test is identical for either type.
+        session(employee, computer, ActivityType.ACTIVE, local(22, 0), local(2, 0, NEXT_DAY))
 
         rows = list(
             activity_rows(filters_for(office, date_from="2026-08-18", date_to="2026-08-19"))
@@ -320,7 +322,8 @@ class TestActivityReport:
 
     def test_an_open_session_stops_at_midnight_for_a_past_day(self, office, employee, computer):
         """A session nobody closed must not grow every time the report is opened."""
-        session(employee, computer, ActivityType.PC_ON, local(22, 0), None)
+        # ACTIVE, not PC_ON: see the note on the midnight-split test above.
+        session(employee, computer, ActivityType.ACTIVE, local(22, 0), None)
 
         now = local(12, 0, dt.date(2026, 9, 1))
         (row,) = list(activity_rows(filters_for(office, date="2026-08-18"), now=now))
@@ -513,6 +516,9 @@ class TestExport:
         )
         session(employee, computer, ActivityType.PC_ON, local(9, 0), local(18, 0))
         session(employee, computer, ActivityType.ACTIVE, local(9, 0), local(16, 0))
+        # Without this, "PC on" (= active + idle, see summarise()) would be 7h, not 9h:
+        # the fixture's own PC_ON span runs to 18:00, so sampler coverage needs to too.
+        session(employee, computer, ActivityType.IDLE, local(16, 0), local(18, 0))
         session(
             employee,
             computer,

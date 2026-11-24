@@ -7,10 +7,13 @@ hours to each date, not four to one of them. The stored `duration_seconds` is th
 of the session; a day view needs the length of its overlap with that day, which is a
 different number and the one people actually check against a timesheet.
 
-**Nothing sums across activity types.** ACTIVE, IDLE, APPLICATION and WEBSITE sessions
-run in parallel and routinely cover the same wall-clock minute (§18). Adding "active
-time" to "application time" would produce a number that means nothing, so every total
-here is within a single type.
+**Nothing sums across activity types** that run in parallel. ACTIVE/IDLE, APPLICATION
+and WEBSITE sessions routinely cover the same wall-clock minute (§18); adding "active
+time" to "application time" would produce a number that means nothing. The one
+exception is ACTIVE and IDLE themselves: they are the two mutually exclusive values of
+a single state track (never both open at once — see the agent's SessionBuilder), not
+two parallel tracks, so `summarise()`'s "PC on" total is their sum, not a separate
+heartbeat-derived figure — see that function for why.
 
 The pure functions take plain objects and are exhaustively tested; the ORM layer at the
 bottom is the thin part.
@@ -108,10 +111,23 @@ def summarise(sessions, window_start, window_end, now=None) -> dict:
         by_type.get(ActivityType.WEBSITE, []), "website_domain", window_start, window_end, now
     )
 
+    active_seconds = total(ActivityType.ACTIVE)
+    idle_seconds = total(ActivityType.IDLE)
+
     return {
-        "pc_on_seconds": total(ActivityType.PC_ON),
-        "active_seconds": total(ActivityType.ACTIVE),
-        "idle_seconds": total(ActivityType.IDLE),
+        # Deliberately not total(ActivityType.PC_ON): a heartbeat confirms the machine
+        # was reachable, but says nothing about whether the sampler was actually
+        # producing ACTIVE/IDLE readings at the same moment (it runs in a separate
+        # thread, against flakier OS collectors, and closes its own sessions out on any
+        # gap — see sessions.py's rule 4). Reporting raw PC_ON time let "on" cover
+        # stretches with no corroborating sample at all. ACTIVE and IDLE are the two
+        # mutually exclusive values of that one sampler-confirmed state (never both at
+        # once, by construction in the agent's SessionBuilder), so summing them is not
+        # the cross-type sum this module's docstring warns against — it is the
+        # definition of "no data for a timeframe means off".
+        "pc_on_seconds": active_seconds + idle_seconds,
+        "active_seconds": active_seconds,
+        "idle_seconds": idle_seconds,
         "top_applications": top_applications,
         "other_application_seconds": other_application_seconds,
         "top_websites": top_websites,

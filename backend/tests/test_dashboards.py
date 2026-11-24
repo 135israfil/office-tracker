@@ -125,8 +125,12 @@ class TestSummarise:
             self.start + dt.timedelta(hours=offset + length),
         )
 
-    def test_totals_are_per_type_and_never_summed_across(self):
-        pc_start, pc_end = self.hours(9, 9)
+    def test_pc_on_is_active_plus_idle_not_the_raw_pc_on_session(self):
+        """A heartbeat confirming the machine is reachable is not the same claim as
+        the sampler confirming what it was doing — see summarise()'s own comment. The
+        PC_ON session here runs two hours longer than ACTIVE+IDLE cover; those two
+        hours must not count as "on"."""
+        pc_start, pc_end = self.hours(9, 11)
         active_start, active_end = self.hours(9, 7)
         idle_start, idle_end = self.hours(16, 2)
         app_start, app_end = self.hours(9, 4)
@@ -461,7 +465,9 @@ class TestDashboardApi:
         assert body["employee"]["name"] == "Rahim Ahmed"
         assert body["attendance"]["status"] == AttendanceStatus.PRESENT
         activity = body["activity"]
-        assert activity["pc_on_seconds"] == 9 * 3600 + 4 * 60
+        # PC_ON runs 9:01-18:05, but ACTIVE+IDLE only cover 9:01-18:02 - the trailing 3
+        # minutes have no sampler data and must not count as "on" (see summarise()).
+        assert activity["pc_on_seconds"] == 9 * 3600 + 60
         assert activity["top_applications"][0]["name"] == "Visual Studio Code"
         assert activity["top_websites"][0]["name"] == "github.com"
         assert activity["timeline"]["entries"][0]["label"] == "PC started"
@@ -519,10 +525,12 @@ class TestDashboardApi:
         computer = ComputerFactory(employee=employee)
         today = dt.date.today()
         Attendance.objects.create(employee=employee, date=today, status=AttendanceStatus.PRESENT)
+        # ACTIVE, not PC_ON: "PC on" is reported as active+idle (see summarise()), so a
+        # bare PC_ON session with no sampler coverage would report zero here.
         session(
             employee,
             computer,
-            ActivityType.PC_ON,
+            ActivityType.ACTIVE,
             timezone.now() - dt.timedelta(hours=2),
             timezone.now() - dt.timedelta(hours=1),
         )
