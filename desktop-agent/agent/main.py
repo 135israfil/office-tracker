@@ -68,7 +68,7 @@ def configure_logging(verbose=False):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog="agent", description="Office Tracker desktop agent")
+    parser = argparse.ArgumentParser(prog="agent", description="OneRoof Task Manager desktop agent")
     parser.add_argument("--server", help="Backend URL, e.g. https://office.example.com")
     parser.add_argument("--enroll", metavar="CODE", help="Register this PC with an enrollment code")
     parser.add_argument("--status", action="store_true", help="Print agent status and exit")
@@ -112,6 +112,15 @@ def run_agent(service: AgentService, headless: bool) -> int:
     def shutdown(*_):
         service.stop()
         stop.set()
+        if not headless and sys.platform == "darwin":
+            # On macOS the tray's dialog loop, not this function's own stop.wait(),
+            # is what's actually blocking the thread below (see tray.py's _UiThread) —
+            # a signal alone stops the background loops but leaves that blocked, so
+            # the process would hang instead of exiting. A no-op before the tray
+            # exists yet or on any other platform.
+            from .tray import stop_ui_thread
+
+            stop_ui_thread()
 
     # Ctrl+C and a service stop both arrive as signals; without this the process would
     # die mid-heartbeat instead of closing down cleanly.

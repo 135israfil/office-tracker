@@ -86,7 +86,7 @@ staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT
 cp -R "$app" "$staging/"
 ln -s /Applications "$staging/Applications"
-hdiutil create -volname "Office Tracker" -srcfolder "$staging" -ov -format UDZO "$dmg"
+hdiutil create -volname "OneRoof Task Manager" -srcfolder "$staging" -ov -format UDZO "$dmg"
 
 echo "Built $dmg"
 echo

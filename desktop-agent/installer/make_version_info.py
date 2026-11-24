@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agent.version import __version__  # noqa: E402
 
 COMPANY = "Office Management"
-PRODUCT = "Office Tracker Agent"
+PRODUCT = "OneRoof Task Manager"
 DESCRIPTION = "Reports PC activity and liveness to the Office Management server."
 
 TEMPLATE = """VSVersionInfo(

@@ -41,7 +41,7 @@ def _guarded(func):
             log.exception("Tray action %r failed", func.__name__)
             with contextlib.suppress(Exception):
                 show_message(
-                    "Office Tracker",
+                    "OneRoof Task Manager",
                     "Something went wrong and this action didn't complete.\n"
                     "See agent.log for details.",
                 )
@@ -70,7 +70,7 @@ def _icon_image(colour):
 def status_text(status: dict) -> str:
     """The status blurb, kept plain enough to read out over a support call."""
     lines = [
-        f"Office Tracker agent {status['version']}",
+        f"OneRoof Task Manager {status['version']}",
         f"Server: {status['server_url'] or 'not configured'}",
     ]
     if status["registered"]:
@@ -235,7 +235,7 @@ class _UiThread:
         return result[0]
 
     def stop(self):
-        """macOS only: ask the main-thread mainloop to return (see Tray._quit).
+        """macOS only: ask the main-thread mainloop to return (see stop_ui_thread).
 
         Queued, not called directly: root.quit() is a Tk/Tcl call, and every other Tk
         call in this class only ever happens on the thread running mainloop() via this
@@ -258,7 +258,20 @@ def _ui() -> _UiThread:
     return _ui_thread
 
 
-def prompt_for_code(parent_title="Office Tracker") -> str | None:
+def stop_ui_thread():
+    """macOS only: unblock Tray.run()'s main-thread Tk mainloop, if it's running.
+
+    There is no Quit menu item to trigger this from inside the tray any more, so
+    main.py's shutdown() (the SIGINT/SIGTERM handler) calls this directly instead —
+    otherwise a signal would stop the background loops but leave this process's one
+    main thread still parked in Tk's mainloop forever. A no-op if the UI thread was
+    never started (headless, or no dialog has opened yet) or on any other platform.
+    """
+    if _ui_thread is not None:
+        _ui_thread.stop()
+
+
+def prompt_for_code(parent_title="OneRoof Task Manager") -> str | None:
     """Ask for an enrollment code with a small hand-built dialog.
 
     Not tkinter.simpledialog: see _raise_above_everything for why that stopped being
@@ -350,6 +363,10 @@ class Tray:
 
     def __init__(self, service, on_quit):
         self.service = service
+        # Kept, not dead: this is run_agent's general "please start shutting down"
+        # hook (the same shutdown() it registers for SIGINT/SIGTERM), part of its
+        # contract with whatever Tray-shaped object it builds — not specific to the
+        # since-removed Quit menu item, which was its only caller here.
         self.on_quit = on_quit
         self._icon = None
         self._stop = threading.Event()
@@ -368,7 +385,7 @@ class Tray:
 
     @_guarded
     def _show_status(self, *_):
-        show_message("Office Tracker", status_text(self.service.status()))
+        show_message("OneRoof Task Manager", status_text(self.service.status()))
 
     @_guarded
     def _enroll(self, *_):
@@ -377,9 +394,9 @@ class Tray:
             return
         try:
             self.service.enroll(code)
-            show_message("Office Tracker", "This computer is now enrolled.")
+            show_message("OneRoof Task Manager", "This computer is now enrolled.")
         except Exception as exc:
-            show_message("Office Tracker", f"Enrolment failed:\n{exc}")
+            show_message("OneRoof Task Manager", f"Enrolment failed:\n{exc}")
         self._refresh()
 
     @_guarded
@@ -395,11 +412,11 @@ class Tray:
             except Exception as exc:
                 log.exception("Sync now failed")
                 with contextlib.suppress(Exception):
-                    show_message("Office Tracker", f"Sync failed:\n{exc}")
+                    show_message("OneRoof Task Manager", f"Sync failed:\n{exc}")
                 return
             with contextlib.suppress(Exception):
                 show_message(
-                    "Office Tracker",
+                    "OneRoof Task Manager",
                     f"Synced {result['uploaded']} session(s), "
                     f"{result['duplicates']} duplicate(s), {result['rejected']} rejected, "
                     f"{result['pending']} still pending.",
@@ -408,27 +425,22 @@ class Tray:
 
         threading.Thread(target=worker, name="tray-sync-now", daemon=True).start()
 
-    @_guarded
-    def _quit(self, *_):
-        self.on_quit()
-        if self._icon is not None:
-            self._icon.stop()
-        if sys.platform == "darwin" and _ui_thread is not None:
-            _ui_thread.stop()
-
     def run(self):
-        """Blocking. Runs the tray loop until Quit."""
+        """Blocking. Runs the tray loop until the process is stopped (signal or
+        uninstall) — there is deliberately no Quit menu item; see __init__'s on_quit
+        for why that hook still exists even though nothing here calls it."""
         import pystray
 
         menu = pystray.Menu(
             pystray.MenuItem("Status", self._show_status, default=True),
             pystray.MenuItem("Enrol this computer…", self._enroll),
             pystray.MenuItem("Sync now", self._sync_now),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit", self._quit),
         )
         self._icon = pystray.Icon(
-            "office-tracker", _icon_image(COLOURS[self._state()]), "Office Tracker", menu
+            "oneroof-task-manager",
+            _icon_image(COLOURS[self._state()]),
+            "OneRoof Task Manager",
+            menu,
         )
 
         # Refresh the icon colour periodically so a server outage or a revoked token is

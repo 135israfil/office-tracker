@@ -1,4 +1,4 @@
-"""Office Tracker desktop agent."""
+"""OneRoof Task Manager desktop agent."""
 
 from .version import __version__
 

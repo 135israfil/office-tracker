@@ -22,7 +22,11 @@
 ;
 ; /SERVER=, if someone does pass it, still overrides this build-time default.
 
-#define AppName "Office Tracker Agent"
+; Display name only — AppExeName, DefaultDirName and the data directory below stay on
+; the old technical name so an already-installed machine upgrades in place instead of
+; needing a manual uninstall/reinstall; AppId (unchanged) is what Inno actually matches
+; an upgrade against, independent of this string.
+#define AppName "OneRoof Task Manager"
 #define AppPublisher "Office Management"
 #define AppExeName "OfficeTrackerAgent.exe"
 #define AppVersion GetEnv("AGENT_VERSION")
