@@ -165,14 +165,31 @@ class _UiThread:
     (`run`, below), removes the conflict entirely: Tk's event loop is never nested
     inside a foreign one, only ever inside itself, which is the normal and fully
     supported way a modal dialog's own wait_window() has always worked.
+
+    On macOS this dedicated-thread shape is not just unreliable, it is a hard crash:
+    Tk's Cocoa backend can only create or touch windows from the process's actual main
+    thread (NSWindow/Cocoa enforce this), so `tk.Tk()` on a spawned thread aborts the
+    whole process the first time a dialog is opened — which is what "clicking Enrol
+    crashes the app" was. Tray.run() hands pystray's own loop to run_detached() on
+    darwin specifically so this class's mainloop can claim the main thread instead via
+    run_on_main_thread(); every dialog is still marshalled onto it through the same
+    queue, now reaching it from whatever thread pystray's detached loop runs on.
     """
 
     def __init__(self):
         self.root = None
         self._queue = queue.Queue()
-        ready = threading.Event()
-        threading.Thread(target=self._run, args=(ready,), name="tray-ui", daemon=True).start()
-        ready.wait()
+        self._ready = threading.Event()
+        if sys.platform != "darwin":
+            threading.Thread(
+                target=self._run, args=(self._ready,), name="tray-ui", daemon=True
+            ).start()
+            self._ready.wait()
+
+    def run_on_main_thread(self):
+        """macOS only: block the caller (which must be the process's main thread)
+        running Tk's own mainloop there instead of on a spawned thread."""
+        self._run(self._ready)
 
     def _run(self, ready):
         import tkinter as tk
@@ -198,6 +215,7 @@ class _UiThread:
 
     def run(self, builder):
         """Run builder(root) on the UI thread; block the caller until it returns."""
+        self._ready.wait()
         result = []
         error = []
         done = threading.Event()
@@ -215,6 +233,17 @@ class _UiThread:
         if error:
             raise error[0]
         return result[0]
+
+    def stop(self):
+        """macOS only: ask the main-thread mainloop to return (see Tray._quit).
+
+        Queued, not called directly: root.quit() is a Tk/Tcl call, and every other Tk
+        call in this class only ever happens on the thread running mainloop() via this
+        same queue — calling it straight from the quitting thread would be the one
+        exception to that rule.
+        """
+        if self.root is not None:
+            self._queue.put(self.root.quit)
 
 
 _ui_thread = None
@@ -384,6 +413,8 @@ class Tray:
         self.on_quit()
         if self._icon is not None:
             self._icon.stop()
+        if sys.platform == "darwin" and _ui_thread is not None:
+            _ui_thread.stop()
 
     def run(self):
         """Blocking. Runs the tray loop until Quit."""
@@ -408,6 +439,18 @@ class Tray:
 
         threading.Thread(target=poll, name="tray-refresh", daemon=True).start()
         try:
-            self._icon.run()
+            if sys.platform == "darwin":
+                # pystray's AppKit backend and Tk's Cocoa backend each need the
+                # process's actual main thread for their own loop, and this method is
+                # called from main() on that thread — only one of the two loops can
+                # claim it. run_detached() is pystray's own supported way to free the
+                # main thread on macOS (its docs call this out for exactly this
+                # combination); the dialogs' mainloop then takes the main thread
+                # instead (see _UiThread, where plain tk.Tk() on a non-main thread is
+                # a hard crash, which is what "Enrol crashes the app" was).
+                self._icon.run_detached()
+                _ui().run_on_main_thread()
+            else:
+                self._icon.run()
         finally:
             self._stop.set()
