@@ -384,6 +384,16 @@ onBeforeUnmount(revokeThumbnails);
   color: var(--muted);
   margin-top: 0.25rem;
 }
+/* 13 fixed-width labels (one every 2h) don't shrink to fit a phone's width —
+   flex just lets them overflow the card and run off past the viewport edge,
+   invisibly, since the page itself is never allowed to scroll sideways
+   (.app's min-width: 0). Dropping to one every 4h (7 labels) is a CSS-only
+   fix that needs no scroll container of its own. */
+@media (max-width: 30rem) {
+  .timeline-ticks span:nth-child(even) {
+    display: none;
+  }
+}
 .activity-table {
   width: 100%;
   border-collapse: collapse;

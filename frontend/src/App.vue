@@ -798,9 +798,12 @@ td .error,
   }
 }
 
-/* Below this width the sidebar becomes a bar across the top: a drawer would
-   need state and a scrim to do the same job, and the nav is short enough that
-   scrolling it sideways costs less than either. */
+/* Below this width the sidebar becomes a bar across the top. The nav itself
+   wraps onto as many rows as it needs: an admin has 12 links, which a
+   horizontal scroller left almost entirely hidden with no visible scrollbar
+   to hint more existed (confirmed: ~1.5 links visible out of 12, same on
+   every page). Wrapping costs vertical space but needs no gesture nobody is
+   told about and no drawer state/scrim to build instead. */
 @media (max-width: 60rem) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
@@ -811,8 +814,9 @@ td .error,
     z-index: 20;
     height: auto;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.9rem;
+    gap: 0.4rem 0.9rem;
     padding: 0.6rem 0.9rem;
     border-right: none;
     border-bottom: 1px solid var(--border);
@@ -825,12 +829,10 @@ td .error,
   }
   .sidebar__nav {
     flex-direction: row;
-    flex: 1;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .sidebar__nav::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
+    flex: 1 1 100%;
+    order: 3;
+    gap: 0.25rem;
   }
   .sidebar__foot {
     margin-top: 0;
