@@ -34,7 +34,11 @@ def capture_screenshot() -> bytes | None:
         return None
 
     try:
-        image = ImageGrab.grab()
+        # all_screens is a Windows-only kwarg (Pillow docs): without it, ImageGrab
+        # only captures the primary monitor on Windows, silently dropping the rest of
+        # a multi-monitor setup. It's accepted but ignored on macOS, where
+        # screencapture already stitches every display together with no flag needed.
+        image = ImageGrab.grab(all_screens=True)
     except Exception:
         log.exception("Screenshot capture failed")
         return None
