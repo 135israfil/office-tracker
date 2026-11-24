@@ -14,7 +14,13 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # Intel runner, not macos-latest: macos-latest is Apple Silicon (arm64) since
+    # macOS 14, and PyInstaller can't cross-build — it only packages binaries for
+    # the architecture it actually runs on. An arm64 build fails to launch at all
+    # ("not supported on this Mac") on an Intel Mac, which is what this project's
+    # actual test machine is. macos-13 (the old plain Intel image) was retired by
+    # GitHub in December 2025; macos-15-intel is its direct replacement.
+    runs-on: macos-15-intel
     defaults:
       run:
         working-directory: desktop-agent
