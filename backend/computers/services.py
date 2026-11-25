@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from activities.models import Activity, ActivityType
@@ -34,15 +35,37 @@ from .models import (
 # number that tolerates one dropped request plus one slow one without flapping.
 MISSED_HEARTBEATS_BEFORE_OFFLINE = 3
 
+# Android's CollectorWorker runs on a WorkManager periodic job, which has a hard
+# platform floor of 15 minutes — it cannot heartbeat any more often than that, unlike a
+# desktop agent's configurable (default 60s) interval.
+ANDROID_HEARTBEAT_INTERVAL_SECONDS = 15 * 60
+
 
 class RegistrationError(Exception):
     """Enrolment refused. Surfaces as a 400 with the message shown to the installer."""
 
 
-def offline_after(settings_obj=None) -> dt.timedelta:
+def offline_after(settings_obj=None, device_type: str = DeviceType.PC) -> dt.timedelta:
+    """How long without a heartbeat before a machine of this device type counts as gone.
+
+    Android's own heartbeat interval is fixed by the OS, not by `settings_obj`, so
+    applying the desktop window to it would flip every phone back to OFFLINE in the gap
+    between two of its own on-time heartbeats.
+    """
     settings_obj = settings_obj or AppSettings.load()
-    return dt.timedelta(
-        seconds=settings_obj.heartbeat_interval_seconds * MISSED_HEARTBEATS_BEFORE_OFFLINE
+    interval = (
+        ANDROID_HEARTBEAT_INTERVAL_SECONDS
+        if device_type == DeviceType.ANDROID
+        else settings_obj.heartbeat_interval_seconds
+    )
+    return dt.timedelta(seconds=interval * MISSED_HEARTBEATS_BEFORE_OFFLINE)
+
+
+def _stale_filter(now, settings_obj) -> Q:
+    """The "past its device type's cutoff" half of the staleness test."""
+    return Q(device_type=DeviceType.PC, last_seen_at__lt=now - offline_after(settings_obj, DeviceType.PC)) | Q(
+        device_type=DeviceType.ANDROID,
+        last_seen_at__lt=now - offline_after(settings_obj, DeviceType.ANDROID),
     )
 
 
@@ -278,14 +301,12 @@ def sweep_offline_computers(now=None, *, settings_obj=None) -> dict:
     """
     settings_obj = settings_obj or AppSettings.load()
     now = now or timezone.now()
-    cutoff = now - offline_after(settings_obj)
 
     # A registered machine that has never checked in is already OFFLINE and is not
     # "stale" — there is nothing to close and nothing to change.
     stale = list(
-        Computer.objects.filter(
-            status__in=[ComputerStatus.ONLINE, ComputerStatus.IDLE],
-            last_seen_at__lt=cutoff,
+        Computer.objects.filter(status__in=[ComputerStatus.ONLINE, ComputerStatus.IDLE]).filter(
+            _stale_filter(now, settings_obj)
         )
     )
 
@@ -299,4 +320,8 @@ def sweep_offline_computers(now=None, *, settings_obj=None) -> dict:
             computer.status = ComputerStatus.OFFLINE
             computer.save(update_fields=["status", "updated_at"])
 
-    return {"marked_offline": len(stale), "sessions_closed": closed, "cutoff": cutoff}
+    return {
+        "marked_offline": len(stale),
+        "sessions_closed": closed,
+        "cutoff": now - offline_after(settings_obj, DeviceType.PC),
+    }

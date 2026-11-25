@@ -19,14 +19,18 @@ from attendance.models import AppSettings
 from computers.models import (
     Computer,
     ComputerStatus,
+    DeviceType,
     generate_enrollment_code,
     hash_token,
     normalise_code,
 )
 from computers.services import (
+    ANDROID_HEARTBEAT_INTERVAL_SECONDS,
     MISSED_HEARTBEATS_BEFORE_OFFLINE,
     RegistrationError,
+    offline_after,
     record_heartbeat,
+    record_mobile_heartbeat,
     register_device,
     sweep_offline_computers,
 )
@@ -374,6 +378,37 @@ class TestOfflineSweep:
         sweep_offline_computers()
         computer.refresh_from_db()
         assert computer.status == ComputerStatus.OFFLINE
+
+    def test_androids_window_is_longer_than_a_desktops(self):
+        # The collector can only heartbeat every 15 minutes (WorkManager's floor), so its
+        # window must outlast that gap, unlike the ~60s-interval desktop agent.
+        settings_obj = AppSettings.load()
+        assert offline_after(settings_obj, DeviceType.ANDROID) > dt.timedelta(
+            seconds=ANDROID_HEARTBEAT_INTERVAL_SECONDS
+        )
+        assert offline_after(settings_obj, DeviceType.ANDROID) > offline_after(
+            settings_obj, DeviceType.PC
+        )
+
+    def test_a_phone_heartbeat_within_its_own_window_is_left_alone(self):
+        phone = ComputerFactory(device_type=DeviceType.ANDROID)
+        # Past the desktop's ~3 minute window but well inside Android's own ~45 minutes.
+        record_mobile_heartbeat(phone, now=timezone.now() - dt.timedelta(minutes=20))
+
+        sweep_offline_computers()
+
+        phone.refresh_from_db()
+        assert phone.status == ComputerStatus.ONLINE
+
+    def test_a_phone_past_its_own_window_is_marked_offline(self):
+        phone = ComputerFactory(device_type=DeviceType.ANDROID)
+        record_mobile_heartbeat(phone, now=timezone.now() - dt.timedelta(minutes=50))
+
+        result = sweep_offline_computers()
+
+        phone.refresh_from_db()
+        assert phone.status == ComputerStatus.OFFLINE
+        assert result["marked_offline"] == 1
 
     def test_sweep_does_not_resurrect_or_touch_disabled_computers(self):
         computer = ComputerFactory(status=ComputerStatus.DISABLED)
