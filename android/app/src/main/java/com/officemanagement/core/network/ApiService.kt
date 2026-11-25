@@ -177,4 +177,18 @@ interface ApiService {
 
     @DELETE("holidays/{id}/")
     suspend fun deleteHoliday(@Path("id") id: Int)
+
+    // --- Mobile tracking agent (§8) ------------------------------------------------
+
+    @POST("agent/mobile/register/")
+    suspend fun registerMobileDevice(@Body body: MobileDeviceRequest): MobileRegisterResponse
+
+    @POST("agent/mobile/heartbeat/")
+    suspend fun mobileHeartbeat(@Body body: MobileDeviceRequest): MobileHeartbeatResponse
+
+    @POST("agent/mobile/sync/")
+    suspend fun mobileSync(@Body body: MobileSyncRequest): MobileSyncResponse
+
+    @GET("agent/mobile/config/")
+    suspend fun mobileConfig(): MobileAgentConfig
 }

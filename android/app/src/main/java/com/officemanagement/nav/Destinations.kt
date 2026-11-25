@@ -6,6 +6,7 @@ package com.officemanagement.nav
  * instead, since they don't appear in the drawer themselves. */
 sealed class Destinations(val route: String, val label: String) {
     data object Login : Destinations("login", "Login")
+    data object TrackingOnboarding : Destinations("tracking_onboarding", "Activity tracking")
     data object Dashboard : Destinations("dashboard", "Dashboard")
     data object MyDashboard : Destinations("my_dashboard", "My Dashboard")
     data object Notifications : Destinations("notifications", "Notifications")

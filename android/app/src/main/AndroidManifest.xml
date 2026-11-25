@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Usage-access and foreground-service permissions (the phone-tracking
-         subsystem) are declared when that feature actually lands — see the plan's
-         build order — rather than up front for code that doesn't exist yet. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Check-in's distance-from-office check only needs a coarse fix; requesting
          fine location too so FusedLocationProviderClient can return its best estimate
          on devices where only fine is actually available. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Phone-tracking subsystem (§8). PACKAGE_USAGE_STATS has no runtime dialog — it
+         can only be granted from Settings (see tracking/collector/UsageAccess.kt) —
+         which is what "ProtectedPermissions" below is acknowledging, not bypassing. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".OfficeManagementApp"
@@ -21,6 +27,22 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.OneRoofTaskManager">
+
+        <!-- WorkManager's own androidx-startup provider builds Workers with its
+             default (no-arg-constructor) factory; removing it is what makes
+             OfficeManagementApp's Configuration.Provider the one that actually takes
+             effect, which is what lets CollectorWorker/SyncWorker take injected
+             constructor dependencies at all. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
         <activity
             android:name=".MainActivity"

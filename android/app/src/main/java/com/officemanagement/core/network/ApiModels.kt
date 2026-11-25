@@ -391,3 +391,85 @@ data class SettingsPatchRequest(
     @SerialName("radius_meters") val radiusMeters: Int? = null,
     @SerialName("activity_retention_days") val activityRetentionDays: Int? = null,
 )
+
+// --- Mobile tracking agent (backend/computers/agent_views.py's `/api/agent/mobile/*`,
+// the plan's §8) --------------------------------------------------------------------
+
+/** Body shared by every agent/mobile endpoint below — mirrors
+ * backend/computers/serializers.py's MobileDeviceSerializer. No enrollment code: these
+ * endpoints are bearer-token authenticated by the user's own login (see
+ * AuthInterceptor), the same credential the rest of the app already uses. */
+@Serializable
+data class MobileDeviceRequest(
+    @SerialName("computer_name") val computerName: String = "",
+    @SerialName("operating_system") val operatingSystem: String = "",
+    @SerialName("agent_version") val agentVersion: String = "",
+)
+
+/** What `register`/`heartbeat`/`config` return about the fleet-wide tracking settings
+ * — mirrors backend/computers/services.py's agent_config_payload(). */
+@Serializable
+data class MobileAgentConfig(
+    @SerialName("idle_threshold_seconds") val idleThresholdSeconds: Int = 300,
+    @SerialName("heartbeat_interval_seconds") val heartbeatIntervalSeconds: Int = 60,
+    @SerialName("sync_interval_seconds") val syncIntervalSeconds: Int = 60,
+    val enabled: Boolean = true,
+    @SerialName("config_version") val configVersion: Long = 0,
+    @SerialName("computer_id") val computerId: Int? = null,
+    @SerialName("computer_name") val computerName: String? = null,
+    @SerialName("employee_name") val employeeName: String? = null,
+)
+
+@Serializable
+data class MobileRegisterResponse(
+    val computer: EnrolledComputerStub,
+    val config: MobileAgentConfig,
+)
+
+/** Mirrors backend/computers/serializers.py's EnrolledComputerSerializer. */
+@Serializable
+data class EnrolledComputerStub(
+    val id: Int,
+    @SerialName("computer_name") val computerName: String,
+    @SerialName("employee_name") val employeeName: String,
+)
+
+@Serializable
+data class MobileHeartbeatResponse(
+    val status: String,
+    val config: MobileAgentConfig,
+)
+
+/** One closed session, wire-shaped for `ActivitySessionSerializer`
+ * (backend/activities/serializers.py) — the upload counterpart of
+ * tracking/sessions/Sample.kt's ClosedSession, built once per batch rather than
+ * carried as the on-device representation (see tracking/storage/TrackingSessionEntity.kt). */
+@Serializable
+data class MobileSessionPayload(
+    @SerialName("client_event_id") val clientEventId: String,
+    @SerialName("activity_type") val activityType: String,
+    @SerialName("application_name") val applicationName: String = "",
+    @SerialName("executable_name") val executableName: String = "",
+    @SerialName("website_domain") val websiteDomain: String = "",
+    @SerialName("start_time") val startTime: String,
+    @SerialName("end_time") val endTime: String,
+)
+
+@Serializable
+data class MobileSyncRequest(val sessions: List<MobileSessionPayload>)
+
+/** One rejected session, named so the caller can discard exactly that row locally
+ * rather than retrying the whole batch forever. */
+@Serializable
+data class MobileSyncRejection(
+    val index: Int = 0,
+    @SerialName("client_event_id") val clientEventId: String = "",
+)
+
+@Serializable
+data class MobileSyncResponse(
+    val accepted: Int = 0,
+    val duplicates: Int = 0,
+    val rejected: List<MobileSyncRejection> = emptyList(),
+    val config: MobileAgentConfig? = null,
+)

@@ -29,6 +29,7 @@ import com.officemanagement.reports.ReportsScreen
 import com.officemanagement.settings.SettingsScreen
 import com.officemanagement.tasks.TaskDetailScreen
 import com.officemanagement.tasks.TasksScreen
+import com.officemanagement.tracking.onboarding.TrackingOnboardingScreen
 import com.officemanagement.vault.VaultEntryDetailScreen
 import com.officemanagement.vault.VaultScreen
 
@@ -54,6 +55,7 @@ fun AppNavGraph(sessionViewModel: SessionViewModel = hiltViewModel()) {
             // Still waiting on refreshCurrentUser()/login()'s own response to learn
             // the role — stay on whatever is showing rather than guess.
             currentUser == null -> null
+            sessionViewModel.needsTrackingOnboarding() -> Destinations.TrackingOnboarding.route
             currentUser!!.isAdmin -> Destinations.Dashboard.route
             else -> Destinations.MyDashboard.route
         }
@@ -69,6 +71,18 @@ fun AppNavGraph(sessionViewModel: SessionViewModel = hiltViewModel()) {
 
     NavHost(navController = navController, startDestination = Destinations.Login.route) {
         composable(Destinations.Login.route) { LoginScreen() }
+
+        composable(Destinations.TrackingOnboarding.route) {
+            TrackingOnboardingScreen(
+                onDone = {
+                    val next = if (currentUser?.isAdmin == true) Destinations.Dashboard.route else Destinations.MyDashboard.route
+                    navController.navigate(next) {
+                        popUpTo(0) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
 
         authedScreen(Destinations.Dashboard, currentUser, currentRoute, navController, sessionViewModel::logout) {
             DashboardScreen()
