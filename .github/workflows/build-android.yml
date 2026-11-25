@@ -1,0 +1,48 @@
+name: Build Android app
+
+# Builds a debug APK on every push touching android/, so each phase of the Android app
+# (see the Android plan) is sideload-testable on a real phone without needing a local
+# Android SDK/Gradle setup on whatever machine is pushing the change.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/build-android.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # This repo is checked out on Windows, which does not track the executable bit —
+      # gradlew arrives here without +x regardless of what's set locally (the same
+      # issue build-macos-agent.yml hit with its own build script).
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --console=plain
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oneroof-task-manager-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

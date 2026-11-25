@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Usage-access and foreground-service permissions (the phone-tracking
+         subsystem) are declared when that feature actually lands — see the plan's
+         build order — rather than up front for code that doesn't exist yet. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Check-in's distance-from-office check only needs a coarse fix; requesting
+         fine location too so FusedLocationProviderClient can return its best estimate
+         on devices where only fine is actually available. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <application
+        android:name=".OfficeManagementApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OneRoofTaskManager">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.OneRoofTaskManager">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Lets the Reports screen share an exported CSV (a content:// URI, never a
+             raw file:// path, which newer Android refuses to hand to another app) via
+             a normal share-sheet intent instead of needing Storage Access Framework's
+             heavier CreateDocument flow for this phase. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+</manifest>

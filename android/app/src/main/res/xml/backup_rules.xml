@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-Android-12 backup rules. The auth token (DataStore, EncryptedSharedPreferences)
+     must never ride along in a backup — restoring it to a different device would hand
+     that device someone else's login, and restoring it to a reinstall on the SAME
+     device would resurrect a token the user may have since revoked. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="datastore" />
+</full-backup-content>

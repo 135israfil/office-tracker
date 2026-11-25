@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose supplies the real Material3 theme (ui/theme/Theme.kt); this XML theme
+         only needs to exist to set the window background before Compose takes over, and
+         to give the launcher activity a non-default splash/background colour. -->
+    <style name="Theme.OneRoofTaskManager" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

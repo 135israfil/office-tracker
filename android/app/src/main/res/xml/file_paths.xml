@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exposes only the one cache subfolder report exports are written to — nothing
+     else the app stores needs to be shareable via FileProvider. -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>
