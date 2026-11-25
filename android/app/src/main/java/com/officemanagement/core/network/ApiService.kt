@@ -131,6 +131,12 @@ interface ApiService {
     @PATCH("events/{id}/")
     suspend fun updateEvent(@Path("id") id: Int, @Body body: EventWriteRequest): EventItem
 
+    @PATCH("events/{id}/financials/")
+    suspend fun updateEventFinancials(@Path("id") id: Int, @Body body: EventFinancialsPatchRequest): EventItem
+
+    @PATCH("events/{id}/coordination/")
+    suspend fun updateEventCoordination(@Path("id") id: Int, @Body body: EventCoordinationPatchRequest): EventItem
+
     @DELETE("events/{id}/")
     suspend fun deleteEvent(@Path("id") id: Int)
 

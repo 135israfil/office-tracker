@@ -11,6 +11,7 @@ import com.officemanagement.core.network.AssigneeRequest
 import com.officemanagement.core.network.EmployeeStub
 import com.officemanagement.core.network.TaskItem
 import com.officemanagement.core.network.TaskPatchRequest
+import com.officemanagement.core.network.TaskWriteRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -19,6 +20,7 @@ data class TaskDetailUiState(
     val isLoading: Boolean = true,
     val task: TaskItem? = null,
     val assignableEmployees: List<EmployeeStub> = emptyList(),
+    val subtasks: List<TaskItem> = emptyList(),
     val error: String? = null,
     val isDeleted: Boolean = false,
 )
@@ -50,20 +52,63 @@ class TaskDetailViewModel @Inject constructor(
         uiState = uiState.copy(isLoading = true, error = null)
         viewModelScope.launch {
             uiState = try {
-                uiState.copy(isLoading = false, task = api.task(taskId))
+                val task = api.task(taskId)
+                // A sub-task cannot itself have sub-tasks (the backend enforces one
+                // level), so that section only ever applies to a root task.
+                val subtasks = if (task.parentStub == null) {
+                    try {
+                        api.tasks(parent = taskId).results
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                } else {
+                    emptyList()
+                }
+                uiState.copy(isLoading = false, task = task, subtasks = subtasks)
             } catch (e: Exception) {
                 uiState.copy(isLoading = false, error = e.message ?: "Could not load the task.")
             }
         }
     }
 
-    fun setStatus(status: String) {
+    fun setStatus(status: String) = patch(TaskPatchRequest(status = status))
+    fun setTitle(title: String) = patch(TaskPatchRequest(title = title))
+    fun setDescription(description: String) = patch(TaskPatchRequest(description = description))
+    fun setDeadline(deadline: String?) = patch(TaskPatchRequest(deadline = deadline))
+
+    private fun patch(body: TaskPatchRequest) {
         viewModelScope.launch {
             try {
-                uiState = uiState.copy(task = api.updateTask(taskId, TaskPatchRequest(status = status)))
+                uiState = uiState.copy(task = api.updateTask(taskId, body))
             } catch (_: Exception) {
-                // The status reverts on next load() if this failed silently; a
-                // toast is a small follow-up, not worth a new UI pattern for one field.
+                // Reverts on next load() if this failed silently; a toast is a small
+                // follow-up, not worth a new UI pattern for one field.
+            }
+        }
+    }
+
+    fun createSubtask(
+        title: String,
+        description: String,
+        status: String,
+        deadline: String?,
+        assigneeIds: List<Int>,
+    ) {
+        viewModelScope.launch {
+            try {
+                api.createTask(
+                    TaskWriteRequest(
+                        title = title,
+                        description = description,
+                        status = status,
+                        deadline = deadline,
+                        parent = taskId,
+                        assignees = assigneeIds,
+                    ),
+                )
+                uiState = uiState.copy(subtasks = api.tasks(parent = taskId).results)
+            } catch (_: Exception) {
+                // The sub-task form stays open with what was typed on failure.
             }
         }
     }

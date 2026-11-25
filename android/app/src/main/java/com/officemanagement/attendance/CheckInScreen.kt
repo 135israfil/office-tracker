@@ -1,4 +1,6 @@
 package com.officemanagement.attendance
+import com.officemanagement.ui.components.AppOutlinedButton
+import com.officemanagement.ui.components.AppButton
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -48,7 +50,7 @@ fun CheckInScreen(viewModel: CheckInViewModel = hiltViewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Check-in needs your location to confirm you're at the office.")
-                Button(
+                AppButton(
                     onClick = {
                         permissionLauncher.launch(
                             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
@@ -63,7 +65,7 @@ fun CheckInScreen(viewModel: CheckInViewModel = hiltViewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(state.error ?: "Could not load attendance.", color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Retry")
                 }
             }
@@ -79,14 +81,14 @@ fun CheckInScreen(viewModel: CheckInViewModel = hiltViewModel()) {
                 if (state.error != null) {
                     Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
                 }
-                Button(
+                AppButton(
                     onClick = { if (today.checkedIn) viewModel.checkOut() else viewModel.checkIn() },
                     enabled = !state.isSubmitting,
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
                 ) {
                     Text(if (state.isSubmitting) "Submitting…" else if (today.checkedIn) "Check out" else "Check in")
                 }
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     Text("Refresh")
                 }
             }

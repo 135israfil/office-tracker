@@ -1,16 +1,14 @@
 package com.officemanagement.computers
+import com.officemanagement.ui.components.AppOutlinedButton
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -18,16 +16,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.officemanagement.core.network.ComputerListItem
+import com.officemanagement.ui.components.BadgeTone
+import com.officemanagement.ui.components.StatusBadge
 
 @Composable
 fun ComputersScreen(viewModel: ComputersViewModel = hiltViewModel()) {
@@ -41,7 +38,7 @@ fun ComputersScreen(viewModel: ComputersViewModel = hiltViewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(state.error, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Retry")
                 }
             }
@@ -69,20 +66,15 @@ private fun ComputerRow(computer: ComputerListItem) {
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(computer.computerName, style = MaterialTheme.typography.titleMedium)
-            Text("${computer.employeeName} · ${computer.operatingSystem}")
+            Text(
+                "${computer.employeeName} · ${computer.operatingSystem}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(statusColor(computer.status)),
+        StatusBadge(
+            computer.status,
+            tone = if (computer.status == "ONLINE" || computer.status == "IDLE") BadgeTone.OK else BadgeTone.DANGER,
         )
     }
-}
-
-private fun statusColor(status: String): Color = when (status) {
-    "ONLINE" -> Color(0xFF1F6F43)
-    "IDLE" -> Color(0xFFD99514)
-    "DISABLED" -> Color(0xFFB91C1C)
-    else -> Color(0xFF9E9E9E) // OFFLINE
 }

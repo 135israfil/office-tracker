@@ -1,4 +1,5 @@
 package com.officemanagement.attendance
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -40,7 +41,7 @@ fun AdminAttendanceScreen(viewModel: AdminAttendanceViewModel = hiltViewModel())
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(state.error, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Retry")
                 }
             }
@@ -114,8 +115,8 @@ private fun CorrectionDialog(punch: PunchItem, onDismiss: () -> Unit, onSave: (S
             }
         },
         confirmButton = {
-            OutlinedButton(onClick = { onSave(checkIn, checkOut, note) }) { Text("Save") }
+            AppOutlinedButton(onClick = { onSave(checkIn, checkOut, note) }) { Text("Save") }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { AppOutlinedButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

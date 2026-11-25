@@ -1,4 +1,5 @@
 package com.officemanagement.tasks
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -13,14 +14,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,8 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.officemanagement.core.network.EmployeeStub
 import com.officemanagement.core.network.TaskItem
+import com.officemanagement.ui.components.BadgeTone
+import com.officemanagement.ui.components.StatusBadge
 
 @Composable
 fun TasksScreen(viewModel: TasksViewModel = hiltViewModel(), onOpenTask: (Int) -> Unit) {
@@ -55,7 +55,7 @@ fun TasksScreen(viewModel: TasksViewModel = hiltViewModel(), onOpenTask: (Int) -
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                    AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Retry")
                     }
                 }
@@ -73,22 +73,45 @@ fun TasksScreen(viewModel: TasksViewModel = hiltViewModel(), onOpenTask: (Int) -
     if (showCreate) {
         NewTaskDialog(
             onDismiss = { showCreate = false },
-            onCreate = { title, description, assigneeIds ->
+            onCreate = { title, description, status, deadline, assigneeIds ->
                 showCreate = false
-                viewModel.createTask(title, description, assigneeIds) {}
+                viewModel.createTask(title, description, status, deadline, assigneeIds) {}
             },
         )
     }
 }
 
+// Mirrors frontend/src/views/TasksView.vue's STATUS_BADGE map: TODO has no tone (plain
+// pill), IN_PROGRESS/BLOCKED read as "in motion but not done" (warn), DONE is the one
+// positive outcome (ok), CANCELLED is the one terminal negative (danger).
+private fun taskBadgeTone(status: String): BadgeTone = when (status) {
+    "DONE" -> BadgeTone.OK
+    "IN_PROGRESS", "BLOCKED" -> BadgeTone.WARN
+    "CANCELLED" -> BadgeTone.DANGER
+    else -> BadgeTone.NEUTRAL
+}
+
 @Composable
 private fun TaskRow(task: TaskItem, onClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp)) {
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(task.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            if (task.isOverdue) Text("OVERDUE", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            if (task.isOverdue) {
+                Text(
+                    "OVERDUE",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+            }
+            StatusBadge(task.status, tone = taskBadgeTone(task.status))
         }
-        Text("${task.status} · ${task.deadline ?: "no deadline"}", style = MaterialTheme.typography.bodySmall)
+        Text(
+            task.deadline ?: "no deadline",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 
@@ -96,46 +119,24 @@ private fun TaskRow(task: TaskItem, onClick: () -> Unit) {
 private fun NewTaskDialog(
     viewModel: NewTaskViewModel = hiltViewModel(),
     onDismiss: () -> Unit,
-    onCreate: (String, String, List<Int>) -> Unit,
+    onCreate: (title: String, description: String, status: String, deadline: String?, assigneeIds: List<Int>) -> Unit,
 ) {
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    val selected = remember { mutableStateOf(setOf<Int>()) }
+    val form = remember { TaskFormState() }
     val employees = viewModel.employees
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New task") },
-        text = {
-            Column {
-                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, singleLine = true)
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                if (employees.isNotEmpty()) {
-                    Text("Assign to", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
-                    employees.forEach { employee: EmployeeStub ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = employee.id in selected.value,
-                                onCheckedChange = { checked ->
-                                    selected.value = if (checked) selected.value + employee.id else selected.value - employee.id
-                                },
-                            )
-                            Text(employee.name)
-                        }
-                    }
-                }
-            }
-        },
+        text = { TaskFormFields(form, employees) },
         confirmButton = {
-            OutlinedButton(
-                onClick = { if (title.isNotBlank()) onCreate(title, description, selected.value.toList()) },
+            AppOutlinedButton(
+                onClick = {
+                    if (form.title.isNotBlank()) {
+                        onCreate(form.title, form.description, form.status, form.deadline.ifBlank { null }, form.selectedAssignees.value.toList())
+                    }
+                },
             ) { Text("Create") }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { AppOutlinedButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

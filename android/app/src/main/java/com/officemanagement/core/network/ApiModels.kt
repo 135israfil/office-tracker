@@ -52,6 +52,7 @@ data class AttendanceCounts(
     val absent: Int,
     val leave: Int,
     @SerialName("not_recorded") val notRecorded: Int,
+    @SerialName("is_working_day") val isWorkingDay: Boolean = true,
 )
 
 /** Mirrors backend/core/dashboards.py's computer_counts() (partial, see above). */
@@ -62,6 +63,7 @@ data class ComputerCounts(
     val active: Int,
     val idle: Int,
     val offline: Int,
+    val unregistered: Int = 0,
 )
 
 /** Mirrors backend/core/views.py's AdminDashboardView response (partial). */
@@ -241,6 +243,9 @@ data class AssigneeRequest(val employee: Int)
 data class VaultGrant(val grantee: EmployeeStub, @SerialName("granted_by") val grantedBy: EmployeeStub)
 
 @Serializable
+data class AdminViewRecord(val admin: String? = null, val at: String)
+
+@Serializable
 data class VaultEntryItem(
     val id: Int,
     val title: String,
@@ -250,6 +255,7 @@ data class VaultEntryItem(
     val owner: EmployeeStub,
     val grants: List<VaultGrant> = emptyList(),
     @SerialName("visible_to") val visibleTo: List<String> = emptyList(),
+    @SerialName("last_admin_reveal") val lastAdminReveal: AdminViewRecord? = null,
 )
 
 @Serializable
@@ -259,6 +265,9 @@ data class VaultEntryWriteRequest(
     val password: String? = null,
     val url: String = "",
     val notes: String = "",
+    // Create-only: backend/vault/views.py's perform_create() reads this straight off
+    // request.data (it isn't a declared serializer field), so it's a no-op on update.
+    val grantees: List<Int> = emptyList(),
 )
 
 @Serializable
@@ -280,6 +289,20 @@ data class EventItem(
     @SerialName("document_status") val documentStatus: String? = null,
     @SerialName("financial_status") val financialStatus: String? = null,
     val owner: EmployeeStub,
+    @SerialName("last_admin_view") val lastAdminView: AdminViewRecord? = null,
+)
+
+@Serializable
+data class EventFinancialsPatchRequest(
+    val budget: String? = null,
+    @SerialName("document_status") val documentStatus: String? = null,
+    @SerialName("financial_status") val financialStatus: String? = null,
+)
+
+@Serializable
+data class EventCoordinationPatchRequest(
+    @SerialName("assigned_lead_id") val assignedLeadId: Int? = null,
+    @SerialName("booking_status") val bookingStatus: String? = null,
 )
 
 @Serializable

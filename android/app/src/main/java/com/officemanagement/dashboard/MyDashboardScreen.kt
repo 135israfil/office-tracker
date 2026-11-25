@@ -1,4 +1,5 @@
 package com.officemanagement.dashboard
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,9 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.officemanagement.ui.components.StatTile
 
 /** Employee home — §24's own-data-only summary, in brief (name, department, leave
- * balance). The activity breakdown and own computers list are a later phase. */
+ * balance). The web app also shows today's check-in/out and a PC-activity breakdown
+ * here; those live on this app's own Attendance and Activity screens instead of being
+ * duplicated on the home screen. */
 @Composable
 fun MyDashboardScreen(viewModel: MyDashboardViewModel = hiltViewModel()) {
     val state = viewModel.uiState
@@ -29,19 +33,25 @@ fun MyDashboardScreen(viewModel: MyDashboardViewModel = hiltViewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(state.error, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Retry")
                 }
             }
-            state.summary != null -> Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+            state.summary != null -> Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
                 val employee = state.summary.employee
                 val leave = state.summary.leave
                 Text(employee.name, style = MaterialTheme.typography.titleLarge)
-                Text("${employee.designation} · ${employee.department}")
                 Text(
-                    "Leave: ${leave.remaining} of ${leave.total} remaining",
-                    modifier = Modifier.padding(top = 16.dp),
+                    "${employee.designation} · ${employee.department}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 20.dp),
                 )
+
+                SectionLabel("Leave")
+                val tileModifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                StatTile("Remaining", leave.remaining, modifier = tileModifier)
+                StatTile("Used", leave.used, hint = "of ${leave.total} total", modifier = tileModifier)
             }
         }
     }

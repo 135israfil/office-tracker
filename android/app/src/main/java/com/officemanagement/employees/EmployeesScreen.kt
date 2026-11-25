@@ -1,6 +1,8 @@
 package com.officemanagement.employees
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,7 +13,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +22,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.officemanagement.core.network.EmployeeListItem
+import com.officemanagement.ui.components.BadgeTone
+import com.officemanagement.ui.components.StatusBadge
 
 @Composable
 fun EmployeesScreen(viewModel: EmployeesViewModel = hiltViewModel()) {
@@ -46,7 +49,7 @@ fun EmployeesScreen(viewModel: EmployeesViewModel = hiltViewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(state.error, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Retry")
                 }
             }
@@ -67,12 +70,19 @@ fun EmployeesScreen(viewModel: EmployeesViewModel = hiltViewModel()) {
 @Composable
 private fun EmployeeRow(employee: EmployeeListItem) {
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        Text(employee.name, style = MaterialTheme.typography.titleMedium)
-        Text("${employee.designation} · ${employee.department}")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(employee.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            StatusBadge(employee.status, tone = if (employee.status == "ACTIVE") BadgeTone.OK else BadgeTone.DANGER)
+        }
         Text(
-            "${employee.employeeId} · ${employee.status}" +
-                if (!employee.isUserActive) " · login disabled" else "",
+            "${employee.designation} · ${employee.department}",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            employee.employeeId + if (!employee.isUserActive) " · login disabled" else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

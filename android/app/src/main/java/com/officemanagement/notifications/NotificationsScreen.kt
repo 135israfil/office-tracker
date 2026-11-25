@@ -1,4 +1,6 @@
 package com.officemanagement.notifications
+import com.officemanagement.ui.components.AppOutlinedButton
+import com.officemanagement.ui.components.AppButton
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +37,7 @@ fun NotificationsScreen(viewModel: NotificationsViewModel = hiltViewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(state.error, color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Retry")
                 }
             }
@@ -45,7 +47,7 @@ fun NotificationsScreen(viewModel: NotificationsViewModel = hiltViewModel()) {
                 style = MaterialTheme.typography.bodyLarge,
             )
             else -> Column(modifier = Modifier.fillMaxSize()) {
-                Button(
+                AppButton(
                     onClick = viewModel::markAllRead,
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                 ) {
@@ -76,6 +78,6 @@ private fun NotificationRow(item: NotificationItem, onClick: () -> Unit) {
             item.message,
             fontWeight = if (isUnread) FontWeight.Bold else FontWeight.Normal,
         )
-        Text(item.createdAt, style = MaterialTheme.typography.bodySmall)
+        Text(item.createdAt, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

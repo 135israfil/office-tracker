@@ -42,10 +42,25 @@ class TasksViewModel @Inject constructor(private val api: ApiService) : ViewMode
         }
     }
 
-    fun createTask(title: String, description: String, assigneeIds: List<Int>, onDone: (Int) -> Unit) {
+    fun createTask(
+        title: String,
+        description: String,
+        status: String,
+        deadline: String?,
+        assigneeIds: List<Int>,
+        onDone: (Int) -> Unit,
+    ) {
         viewModelScope.launch {
             try {
-                val task = api.createTask(TaskWriteRequest(title = title, description = description, assignees = assigneeIds))
+                val task = api.createTask(
+                    TaskWriteRequest(
+                        title = title,
+                        description = description,
+                        status = status,
+                        deadline = deadline,
+                        assignees = assigneeIds,
+                    ),
+                )
                 load()
                 onDone(task.id)
             } catch (_: Exception) {

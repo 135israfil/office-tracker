@@ -1,4 +1,6 @@
 package com.officemanagement.reports
+import com.officemanagement.ui.components.AppOutlinedButton
+import com.officemanagement.ui.components.AppButton
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Box
@@ -60,7 +62,7 @@ fun ReportsScreen(viewModel: ReportsViewModel = hiltViewModel()) {
             ) { Text("Activity") }
         }
 
-        Button(
+        AppButton(
             onClick = viewModel::export,
             enabled = !state.isExporting,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -76,7 +78,7 @@ fun ReportsScreen(viewModel: ReportsViewModel = hiltViewModel()) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                    AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Retry")
                     }
                 }

@@ -1,8 +1,10 @@
 package com.officemanagement.vault
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -30,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.officemanagement.core.network.EmployeeStub
 import com.officemanagement.core.network.VaultEntryItem
 
 @Composable
@@ -52,7 +56,7 @@ fun VaultScreen(viewModel: VaultViewModel = hiltViewModel(), onOpenEntry: (Int) 
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                    AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Retry")
                     }
                 }
@@ -69,10 +73,11 @@ fun VaultScreen(viewModel: VaultViewModel = hiltViewModel(), onOpenEntry: (Int) 
 
     if (showCreate) {
         NewEntryDialog(
+            employees = state.employees,
             onDismiss = { showCreate = false },
-            onCreate = { title, username, password, url ->
+            onCreate = { title, username, password, url, notes, granteeIds ->
                 showCreate = false
-                viewModel.createEntry(title, username, password, url, notes = "") {}
+                viewModel.createEntry(title, username, password, url, notes, granteeIds) {}
             },
         )
     }
@@ -82,16 +87,26 @@ fun VaultScreen(viewModel: VaultViewModel = hiltViewModel(), onOpenEntry: (Int) 
 private fun EntryRow(entry: VaultEntryItem, onClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp)) {
         Text(entry.title, style = MaterialTheme.typography.titleMedium)
-        Text(entry.username.ifBlank { entry.owner.name }, style = MaterialTheme.typography.bodySmall)
+        Text(
+            entry.username.ifBlank { entry.owner.name },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun NewEntryDialog(onDismiss: () -> Unit, onCreate: (String, String, String, String) -> Unit) {
+private fun NewEntryDialog(
+    employees: List<EmployeeStub>,
+    onDismiss: () -> Unit,
+    onCreate: (title: String, username: String, password: String, url: String, notes: String, granteeIds: List<Int>) -> Unit,
+) {
     var title by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    val selectedGrantees = remember { mutableStateOf(setOf<Int>()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -121,13 +136,38 @@ private fun NewEntryDialog(onDismiss: () -> Unit, onCreate: (String, String, Str
                     singleLine = true,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                if (employees.isNotEmpty()) {
+                    Text("Share with", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
+                    employees.forEach { employee ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = employee.id in selectedGrantees.value,
+                                onCheckedChange = { checked ->
+                                    selectedGrantees.value =
+                                        if (checked) selectedGrantees.value + employee.id else selectedGrantees.value - employee.id
+                                },
+                            )
+                            Text(employee.name)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            OutlinedButton(
-                onClick = { if (title.isNotBlank() && password.isNotBlank()) onCreate(title, username, password, url) },
+            AppOutlinedButton(
+                onClick = {
+                    if (title.isNotBlank() && password.isNotBlank()) {
+                        onCreate(title, username, password, url, notes, selectedGrantees.value.toList())
+                    }
+                },
             ) { Text("Create") }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { AppOutlinedButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

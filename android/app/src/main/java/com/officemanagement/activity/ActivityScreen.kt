@@ -1,11 +1,16 @@
 package com.officemanagement.activity
+import com.officemanagement.ui.components.AppOutlinedButton
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,7 +39,7 @@ fun ActivityScreen(viewModel: ActivityViewModel = hiltViewModel()) {
     val state = viewModel.uiState
     var dropdownExpanded by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         if (state.employees.isNotEmpty()) {
             val selectedName = state.employees.firstOrNull { it.id == state.selectedEmployeeId }?.name ?: ""
             ExposedDropdownMenuBox(
@@ -63,19 +68,21 @@ fun ActivityScreen(viewModel: ActivityViewModel = hiltViewModel()) {
             }
         }
 
-        Box(modifier = Modifier.fillMaxSize().padding(top = 16.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
             when {
-                state.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                state.error != null -> Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+                // A verticalScroll parent gives unbounded height, so centering inside a
+                // fillMaxSize() Box here would crash — a fixed height box instead, same
+                // as a loading/error state anywhere else on a scrollable screen.
+                state.isLoading -> Box(modifier = Modifier.fillMaxWidth().padding(32.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+                state.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
+                    AppOutlinedButton(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Retry")
                     }
                 }
-                state.summary != null -> Column(modifier = Modifier.fillMaxSize()) {
+                state.summary != null -> Column(modifier = Modifier.fillMaxWidth()) {
                     ActivityBlockCard(title = "PC", block = state.summary.activity)
                     state.summary.phoneActivity?.let {
                         ActivityBlockCard(title = "Phone", block = it, modifier = Modifier.padding(top = 12.dp))
@@ -88,14 +95,24 @@ fun ActivityScreen(viewModel: ActivityViewModel = hiltViewModel()) {
 
 @Composable
 private fun ActivityBlockCard(title: String, block: ActivityBlock, modifier: Modifier = Modifier) {
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text("${duration(block.activeSeconds)} active · ${duration(block.idleSeconds)} idle")
+            Text(
+                "${duration(block.activeSeconds)} active · ${duration(block.idleSeconds)} idle",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 2.dp),
+            )
             block.topApplications.firstOrNull()?.let {
                 Text(
                     "Top app: ${it.name} (${duration(it.seconds)})",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -103,6 +120,7 @@ private fun ActivityBlockCard(title: String, block: ActivityBlock, modifier: Mod
                 Text(
                     "Top site: ${it.name} (${duration(it.seconds)})",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

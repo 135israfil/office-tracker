@@ -1,8 +1,10 @@
 package com.officemanagement.events
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,10 +14,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -29,7 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.officemanagement.core.network.EmployeeStub
 import com.officemanagement.core.network.EventItem
+import com.officemanagement.ui.components.StatusBadge
 
 @Composable
 fun EventsScreen(viewModel: EventsViewModel = hiltViewModel(), onOpenEvent: (Int) -> Unit) {
@@ -51,7 +61,7 @@ fun EventsScreen(viewModel: EventsViewModel = hiltViewModel(), onOpenEvent: (Int
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(state.error, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
+                    AppOutlinedButton(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Retry")
                     }
                 }
@@ -68,10 +78,11 @@ fun EventsScreen(viewModel: EventsViewModel = hiltViewModel(), onOpenEvent: (Int
 
     if (showCreate) {
         NewEventDialog(
+            employees = state.employees,
             onDismiss = { showCreate = false },
-            onCreate = { title, agency, venue ->
+            onCreate = { title, agency, venue, assignedLeadId, status, alertOn ->
                 showCreate = false
-                viewModel.createEvent(title, agency, venue) {}
+                viewModel.createEvent(title, agency, venue, assignedLeadId, status, alertOn) {}
             },
         )
     }
@@ -80,16 +91,34 @@ fun EventsScreen(viewModel: EventsViewModel = hiltViewModel(), onOpenEvent: (Int
 @Composable
 private fun EventRow(event: EventItem, onClick: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp)) {
-        Text(event.title, style = MaterialTheme.typography.titleMedium)
-        Text("${event.agencyName} · ${event.bookingStatus}", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(event.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            StatusBadge(bookingStatusLabel(event.bookingStatus), tone = bookingStatusTone(event.bookingStatus))
+        }
+        Text(
+            event.agencyName,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NewEventDialog(onDismiss: () -> Unit, onCreate: (String, String, String) -> Unit) {
+private fun NewEventDialog(
+    employees: List<EmployeeStub>,
+    onDismiss: () -> Unit,
+    onCreate: (title: String, agency: String, venue: String, assignedLeadId: Int?, status: String, alertOn: String?) -> Unit,
+) {
     var title by remember { mutableStateOf("") }
     var agency by remember { mutableStateOf("") }
     var venue by remember { mutableStateOf("") }
+    var assignedLead by remember { mutableStateOf<EmployeeStub?>(null) }
+    var status by remember { mutableStateOf("ON_COMMUNICATION") }
+    var alertOn by remember { mutableStateOf("") }
+    var leadMenuExpanded by remember { mutableStateOf(false) }
+    var statusMenuExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -111,11 +140,67 @@ private fun NewEventDialog(onDismiss: () -> Unit, onCreate: (String, String, Str
                     singleLine = true,
                     modifier = Modifier.padding(top = 8.dp),
                 )
+                ExposedDropdownMenuBox(
+                    expanded = leadMenuExpanded,
+                    onExpandedChange = { leadMenuExpanded = it },
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = assignedLead?.name ?: "Unassigned",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Assigned lead") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = leadMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    )
+                    DropdownMenu(expanded = leadMenuExpanded, onDismissRequest = { leadMenuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Unassigned") }, onClick = { assignedLead = null; leadMenuExpanded = false })
+                        employees.forEach { employee ->
+                            DropdownMenuItem(
+                                text = { Text(employee.name) },
+                                onClick = { assignedLead = employee; leadMenuExpanded = false },
+                            )
+                        }
+                    }
+                }
+                ExposedDropdownMenuBox(
+                    expanded = statusMenuExpanded,
+                    onExpandedChange = { statusMenuExpanded = it },
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = bookingStatusLabel(status),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Status") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = statusMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    )
+                    DropdownMenu(expanded = statusMenuExpanded, onDismissRequest = { statusMenuExpanded = false }) {
+                        BOOKING_STATUSES.forEach { value ->
+                            DropdownMenuItem(
+                                text = { Text(bookingStatusLabel(value)) },
+                                onClick = { status = value; statusMenuExpanded = false },
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = alertOn,
+                    onValueChange = { alertOn = it },
+                    label = { Text("Alert on (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
             }
         },
         confirmButton = {
-            OutlinedButton(onClick = { if (title.isNotBlank()) onCreate(title, agency, venue) }) { Text("Create") }
+            AppOutlinedButton(
+                onClick = {
+                    if (title.isNotBlank()) onCreate(title, agency, venue, assignedLead?.id, status, alertOn.ifBlank { null })
+                },
+            ) { Text("Create") }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { AppOutlinedButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

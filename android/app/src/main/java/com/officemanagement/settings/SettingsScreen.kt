@@ -1,14 +1,18 @@
 package com.officemanagement.settings
+import com.officemanagement.ui.components.AppOutlinedButton
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -42,7 +46,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             state.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             state.settings != null -> {
                 val settings = state.settings
-                Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
                     if (state.error != null) {
                         Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
                     }
@@ -84,7 +88,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp),
                     ) {
                         Text("Holidays", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        OutlinedButton(onClick = { showAddHoliday = true }) { Text("Add") }
+                        AppOutlinedButton(onClick = { showAddHoliday = true }) { Text("Add") }
                     }
                     state.holidays.forEach { holiday ->
                         Row(
@@ -92,10 +96,14 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text("${holiday.date} — ${holiday.name}", modifier = Modifier.weight(1f))
-                            OutlinedButton(onClick = { viewModel.deleteHoliday(holiday.id) }) { Text("Delete") }
+                            AppOutlinedButton(onClick = { viewModel.deleteHoliday(holiday.id) }) { Text("Delete") }
                         }
                         HorizontalDivider()
                     }
+
+                    // Clears the system gesture-navigation strip so the last button on a
+                    // short screen isn't swallowed by an edge swipe.
+                    Spacer(Modifier.height(32.dp))
                 }
             }
         }
@@ -123,7 +131,7 @@ private fun NumberField(label: String, value: Int, onCommit: (Int) -> Unit) {
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         trailingIcon = {
-            OutlinedButton(onClick = { text.toIntOrNull()?.let(onCommit) }) { Text("Save") }
+            AppOutlinedButton(onClick = { text.toIntOrNull()?.let(onCommit) }) { Text("Save") }
         },
     )
 }
@@ -149,8 +157,8 @@ private fun AddHolidayDialog(onDismiss: () -> Unit, onAdd: (String, String) -> U
             }
         },
         confirmButton = {
-            OutlinedButton(onClick = { if (date.isNotBlank() && name.isNotBlank()) onAdd(date, name) }) { Text("Add") }
+            AppOutlinedButton(onClick = { if (date.isNotBlank() && name.isNotBlank()) onAdd(date, name) }) { Text("Add") }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { AppOutlinedButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
