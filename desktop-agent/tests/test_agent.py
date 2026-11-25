@@ -43,7 +43,7 @@ from agent.collectors.system import (
     lifecycle_event,
 )
 from agent.config import AgentConfig, TokenStorageError
-from agent.machine import machine_info, windows_name
+from agent.machine import machine_info, operating_system, windows_name
 from agent.service import AgentService, NotRegistered
 from agent.single_instance import AlreadyRunning, SingleInstance
 from agent.storage.queue import SessionQueue
@@ -202,6 +202,16 @@ class TestMachine:
         assert windows_name("10", 19045) == "Windows 10"
         assert windows_name("10", None) == "Windows 10"
         assert windows_name("", None) == "Windows"
+
+    def test_macos_reports_the_product_version_not_the_darwin_kernel_version(self, monkeypatch):
+        # platform.release() would say "23.6.0" (the Darwin kernel version) here, which
+        # nobody reading the Computers list would recognise as "macOS Sonoma 14.6.1".
+        import platform as platform_module
+
+        monkeypatch.setattr(platform_module, "system", lambda: "Darwin")
+        monkeypatch.setattr(platform_module, "mac_ver", lambda: ("14.6.1", ("", "", ""), "x86_64"))
+
+        assert operating_system() == "macOS 14.6.1"
 
     def test_machine_info_has_what_registration_needs(self):
         info = machine_info()

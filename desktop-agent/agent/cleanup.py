@@ -34,9 +34,9 @@ log = logging.getLogger("agent.cleanup")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE = "OfficeTrackerAgent"
 
-# Written by the agent itself on first run (there is no installer-driven equivalent
-# on macOS in this first pass — see the macOS port plan), so cleanup must remove it
-# the same way it removes the Windows Run value.
+# Written by the agent itself on first run (see autostart.py — there is no
+# installer-driven equivalent on macOS), so cleanup must remove it the same way it
+# removes the Windows Run value.
 LAUNCH_AGENT_LABEL = "com.officetracker.agent"
 
 

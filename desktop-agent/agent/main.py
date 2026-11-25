@@ -223,6 +223,15 @@ def main(argv=None) -> int:
         log.warning("This computer is not enrolled yet. Use --enroll CODE or the tray menu.")
 
     try:
+        from .autostart import ensure_installed
+
+        log.info("Autostart: %s", ensure_installed())
+    except Exception:
+        # Never let an autostart glitch stop the agent from running this session —
+        # see autostart.py's own docstring on why this is best-effort.
+        log.exception("Autostart setup failed")
+
+    try:
         with SingleInstance():
             return run_agent(service, headless=args.headless)
     except AlreadyRunning as exc:

@@ -28,8 +28,15 @@ def windows_name(release: str, build: int | None) -> str:
 
 def operating_system() -> str:
     system = platform.system()
+    if system == "Darwin":
+        # platform.release() is the Darwin kernel version ("23.6.0"), meaningless to
+        # anyone reading the Computers list — platform.mac_ver() gives the actual
+        # product version ("14.6.1") instead, the number a user would recognise from
+        # "About This Mac".
+        version = platform.mac_ver()[0]
+        return f"macOS {version}".strip() if version else "macOS"
     if system != "Windows":
-        # Development and CI only — the agent ships for Windows (D3).
+        # Development and CI only — the agent ships for Windows and macOS (D3).
         return f"{system} {platform.release()}".strip()
 
     build = None
