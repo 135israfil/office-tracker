@@ -10,7 +10,7 @@ while an authenticated 2000/hour is far more than a heartbeat loop ever needs.
 """
 
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -25,11 +25,18 @@ from screenshots.serializers import ScreenshotUploadSerializer
 
 from .authentication import DeviceTokenAuthentication
 from .permissions import IsRegisteredDevice
-from .serializers import EnrolledComputerSerializer, HeartbeatSerializer, RegisterSerializer
+from .serializers import (
+    EnrolledComputerSerializer,
+    HeartbeatSerializer,
+    MobileDeviceSerializer,
+    RegisterSerializer,
+)
 from .services import (
     RegistrationError,
     agent_config_payload,
+    get_or_create_mobile_device,
     record_heartbeat,
+    record_mobile_heartbeat,
     register_device,
 )
 
@@ -170,3 +177,117 @@ class AgentScreenshotUploadView(APIView):
             file=data["file"],
         )
         return Response(status=status.HTTP_201_CREATED)
+
+
+# --- Mobile (Android) agent endpoints ---------------------------------------
+#
+# No enrollment code and no device token: these are authenticated by the user's own
+# bearer token (accounts.authentication.BearerTokenAuthentication, wired in globally),
+# the same credential the rest of the app uses. Each view resolves its own Computer row
+# via get_or_create_mobile_device() rather than reading request.auth, since request.auth
+# here is the AuthToken, not a Computer.
+
+
+class AgentMobileRegisterView(APIView):
+    """First call after login: get-or-create this phone's Computer row.
+
+    Returns the same {computer, config} shape AgentRegisterView does, minus a device
+    token — there is nothing to hand back, since nothing new was minted.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "agent"
+
+    def post(self, request):
+        serializer = MobileDeviceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            computer = get_or_create_mobile_device(
+                request.user,
+                computer_name=data.get("computer_name", ""),
+                operating_system=data.get("operating_system", ""),
+                agent_version=data.get("agent_version", ""),
+            )
+        except RegistrationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        record(
+            request.user,
+            AuditLog.Action.DEVICE_REGISTERED,
+            target=computer,
+            payload={
+                "computer_name": computer.computer_name,
+                "employee": computer.employee.employee_id,
+                "operating_system": computer.operating_system,
+                "agent_version": computer.agent_version,
+            },
+        )
+        return Response(
+            {
+                "computer": EnrolledComputerSerializer(computer).data,
+                "config": agent_config_payload(computer=computer),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AgentMobileHeartbeatView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "agent"
+
+    def post(self, request):
+        serializer = MobileDeviceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            computer = get_or_create_mobile_device(
+                request.user, agent_version=data.get("agent_version", "")
+            )
+        except RegistrationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        config = record_mobile_heartbeat(computer, agent_version=data.get("agent_version", ""))
+        return Response({"status": computer.status, "config": config})
+
+
+class AgentMobileSyncView(APIView):
+    """Batch upload of closed activity sessions from a phone.
+
+    Same `ingest_sessions()` the desktop agent's sync goes through — it only ever
+    needed a `Computer` object, indifferent to how one was resolved.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "agent"
+
+    def post(self, request):
+        serializer = SyncRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            computer = get_or_create_mobile_device(request.user)
+        except RegistrationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = ingest_sessions(computer, serializer.validated_data["sessions"])
+        result["config"] = agent_config_payload(computer=computer)
+        return Response(result)
+
+
+class AgentMobileConfigView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "agent"
+
+    def get(self, request):
+        try:
+            computer = get_or_create_mobile_device(request.user)
+        except RegistrationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(agent_config_payload(AppSettings.load(), computer=computer))

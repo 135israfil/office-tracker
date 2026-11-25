@@ -86,12 +86,131 @@ class TestAuthentication:
         assert response.status_code == 400
 
     def test_me_requires_authentication(self):
-        assert APIClient().get("/api/auth/me/").status_code == 403
+        # 401: BearerTokenAuthentication is in DEFAULT_AUTHENTICATION_CLASSES and does
+        # send a WWW-Authenticate challenge, so DRF's "no authenticator offered a
+        # challenge, fall back to 403" rule no longer applies — same as any other
+        # endpoint in this suite now.
+        assert APIClient().get("/api/auth/me/").status_code == 401
 
     def test_csrf_endpoint_sets_the_cookie(self):
         response = APIClient().get("/api/auth/csrf/")
         assert response.status_code == 200
         assert "csrftoken" in response.cookies
+
+
+@pytest.mark.django_db
+class TestTokenAuthentication:
+    """The bearer-token login a native client (the Android app) uses instead of a
+    session cookie — see accounts/authentication.py."""
+
+    def test_token_login_returns_a_token_and_profile(self):
+        employee = EmployeeFactory()
+        response = APIClient().post(
+            "/api/auth/token/", {"email": employee.user.email, "password": PASSWORD}
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["user"]["email"] == employee.user.email
+        assert len(body["token"]) > 20
+
+    def test_wrong_password_is_rejected(self):
+        employee = EmployeeFactory()
+        response = APIClient().post(
+            "/api/auth/token/", {"email": employee.user.email, "password": "wrong-password"}
+        )
+        assert response.status_code == 400
+
+    def test_token_login_creates_no_session(self):
+        """Stays stateless: unlike /api/auth/login/, this must never call Django's
+        login() — a native client holds its own token, not a browser's session cookie."""
+        employee = EmployeeFactory()
+        response = APIClient().post(
+            "/api/auth/token/", {"email": employee.user.email, "password": PASSWORD}
+        )
+        assert "sessionid" not in response.cookies
+
+    def test_the_token_authenticates_later_requests(self):
+        employee = EmployeeFactory()
+        token = (
+            APIClient()
+            .post("/api/auth/token/", {"email": employee.user.email, "password": PASSWORD})
+            .json()["token"]
+        )
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        response = client.get("/api/auth/me/")
+        assert response.status_code == 200
+        assert response.json()["email"] == employee.user.email
+
+    def test_an_invalid_token_is_rejected(self):
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Bearer not-a-real-token")
+        assert client.get("/api/auth/me/").status_code == 401
+
+    def test_a_disabled_accounts_token_is_rejected(self):
+        employee = EmployeeFactory()
+        token = (
+            APIClient()
+            .post("/api/auth/token/", {"email": employee.user.email, "password": PASSWORD})
+            .json()["token"]
+        )
+        employee.user.is_active = False
+        employee.user.save()
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        assert client.get("/api/auth/me/").status_code == 401
+
+    def test_revoking_the_token_logs_out(self):
+        employee = EmployeeFactory()
+        token = (
+            APIClient()
+            .post("/api/auth/token/", {"email": employee.user.email, "password": PASSWORD})
+            .json()["token"]
+        )
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        assert client.post("/api/auth/token/revoke/").status_code == 204
+        assert client.get("/api/auth/me/").status_code == 401
+
+    def test_revoke_without_a_token_is_a_no_op(self, admin_client):
+        """A session-authenticated caller has no bearer token on the request to revoke."""
+        client, _ = admin_client
+        assert client.post("/api/auth/token/revoke/").status_code == 400
+
+    def test_logging_in_twice_issues_two_independent_tokens(self):
+        """One user, two devices (e.g. the web app and a phone): each login's token
+        must keep working after the other is revoked."""
+        employee = EmployeeFactory()
+
+        def login():
+            return (
+                APIClient()
+                .post("/api/auth/token/", {"email": employee.user.email, "password": PASSWORD})
+                .json()["token"]
+            )
+
+        token_a, token_b = login(), login()
+
+        client_a = APIClient()
+        client_a.credentials(HTTP_AUTHORIZATION=f"Bearer {token_a}")
+        client_a.post("/api/auth/token/revoke/")
+
+        client_b = APIClient()
+        client_b.credentials(HTTP_AUTHORIZATION=f"Bearer {token_b}")
+        assert client_b.get("/api/auth/me/").status_code == 200
+
+    def test_session_auth_still_works_alongside_bearer_auth(self):
+        """Both authentication classes are active on the same endpoint (settings.py) —
+        a browser session must keep working exactly as before."""
+        employee = EmployeeFactory()
+        client = APIClient()
+        client.post("/api/auth/login/", {"email": employee.user.email, "password": PASSWORD})
+        response = client.get("/api/auth/me/")
+        assert response.status_code == 200
+        assert response.json()["email"] == employee.user.email
 
 
 @pytest.mark.django_db

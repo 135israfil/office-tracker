@@ -41,6 +41,7 @@ class ComputerSerializer(serializers.ModelSerializer):
             "employee_name",
             "employee_code",
             "computer_name",
+            "device_type",
             "operating_system",
             "agent_version",
             "status",
@@ -58,6 +59,11 @@ class ComputerSerializer(serializers.ModelSerializer):
             "registered_at",
             "agent_version",
             "operating_system",
+            # Admins only ever create PC rows through this serializer (the code-based
+            # enroll flow); an Android row is always auto-provisioned by a phone's own
+            # login (see computers.services.get_or_create_mobile_device), never through
+            # here, so there is no legitimate caller that would ever set this.
+            "device_type",
             "enrollment_expires_at",
             "created_at",
         ]
@@ -80,6 +86,19 @@ class RegisterSerializer(serializers.Serializer):
     """Body of `POST /api/agent/register/` — the only unauthenticated agent endpoint."""
 
     enrollment_code = serializers.CharField(max_length=32)
+    computer_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    operating_system = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    agent_version = serializers.CharField(max_length=32, required=False, allow_blank=True)
+
+
+class MobileDeviceSerializer(serializers.Serializer):
+    """Body shared by every `/api/agent/mobile/*` endpoint.
+
+    No enrollment code: these endpoints are bearer-token authenticated (the user's own
+    login), which is what makes this the one agent request shape with no unauthenticated
+    member at all.
+    """
+
     computer_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
     operating_system = serializers.CharField(max_length=120, required=False, allow_blank=True)
     agent_version = serializers.CharField(max_length=32, required=False, allow_blank=True)

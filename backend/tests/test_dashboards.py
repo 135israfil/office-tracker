@@ -18,7 +18,7 @@ from rest_framework.test import APIClient
 from activities.models import Activity, ActivityType
 from activities.queries import build_timeline, minute_buckets, overlap_seconds, summarise
 from attendance.models import AppSettings, Attendance, AttendanceStatus
-from computers.models import ComputerStatus
+from computers.models import ComputerStatus, DeviceType
 from core.dashboards import attendance_counts, computer_counts, employee_roster
 from tests.factories import AdminFactory, ComputerFactory, EmployeeFactory
 
@@ -473,6 +473,8 @@ class TestDashboardApi:
         assert activity["timeline"]["entries"][0]["label"] == "PC started"
         assert len(activity["minute_buckets"]) == 24 * 60
         assert activity["minute_buckets"][9 * 60 + 1] == "A"
+        # No phone on file for this employee: the block is absent, not an empty shell.
+        assert body["phone_activity"] is None
 
     def test_every_payload_carries_the_office_timezone(self, admin_client, office):
         """The pages render clock times, and they must not drift with the viewer.
@@ -543,6 +545,66 @@ class TestDashboardApi:
         assert body["leave"]["remaining"] == "8.0"
         assert body["activity"]["pc_on_seconds"] == 3600
         assert body["computers"][0]["computer_name"] == computer.computer_name
+
+
+@pytest.mark.django_db
+class TestPhoneActivityBlock:
+    """A phone's activity is a separate block, never summed into the PC numbers —
+    someone active on both at once must not look like more time worked than passed."""
+
+    def test_an_employee_with_only_a_pc_gets_no_phone_block(self, admin_client, office):
+        client, _ = admin_client
+        employee = EmployeeFactory()
+        computer = ComputerFactory(employee=employee)
+        session(employee, computer, ActivityType.ACTIVE, local(9, 0), local(10, 0))
+
+        body = client.get(f"/api/activity/summary/?employee={employee.pk}&date={DAY}").json()
+
+        assert body["phone_activity"] is None
+
+    def test_an_employee_with_a_phone_gets_both_blocks_independently(self, admin_client, office):
+        client, _ = admin_client
+        employee = EmployeeFactory()
+        pc = ComputerFactory(employee=employee)
+        phone = ComputerFactory(employee=employee, device_type=DeviceType.ANDROID)
+        # Same wall-clock hour, two devices: the PC and phone totals must not add up to
+        # two hours of "active" when only one hour of real time passed.
+        session(employee, pc, ActivityType.ACTIVE, local(9, 0), local(10, 0))
+        session(employee, phone, ActivityType.ACTIVE, local(9, 0), local(10, 0))
+
+        body = client.get(f"/api/activity/summary/?employee={employee.pk}&date={DAY}").json()
+
+        assert body["activity"]["active_seconds"] == 3600
+        assert body["phone_activity"]["active_seconds"] == 3600
+
+    def test_phone_applications_do_not_appear_in_the_pc_block(self, admin_client, office):
+        client, _ = admin_client
+        employee = EmployeeFactory()
+        pc = ComputerFactory(employee=employee)
+        phone = ComputerFactory(employee=employee, device_type=DeviceType.ANDROID)
+        session(
+            employee,
+            phone,
+            ActivityType.APPLICATION,
+            local(9, 0),
+            local(9, 30),
+            application_name="Instagram",
+        )
+        session(
+            employee,
+            pc,
+            ActivityType.APPLICATION,
+            local(9, 0),
+            local(9, 30),
+            application_name="Visual Studio Code",
+        )
+
+        body = client.get(f"/api/activity/summary/?employee={employee.pk}&date={DAY}").json()
+
+        pc_apps = [row["name"] for row in body["activity"]["top_applications"]]
+        phone_apps = [row["name"] for row in body["phone_activity"]["top_applications"]]
+        assert pc_apps == ["Visual Studio Code"]
+        assert phone_apps == ["Instagram"]
 
 
 # --- Data isolation (§30) ---------------------------------------------------

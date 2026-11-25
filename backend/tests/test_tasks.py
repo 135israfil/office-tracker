@@ -74,11 +74,8 @@ def client_for(employee):
 @pytest.mark.django_db
 class TestTaskIsolation:
     def test_unauthenticated_is_refused(self):
-        # 403, not 401: this codebase's session authentication never sends a
-        # WWW-Authenticate challenge, the same as every other user-facing endpoint
-        # (401 elsewhere in this suite is reserved for the agent's device-token auth).
         task = TaskFactory()
-        assert APIClient().get(f"/api/tasks/{task.pk}/").status_code == 403
+        assert APIClient().get(f"/api/tasks/{task.pk}/").status_code == 401
 
     def test_an_uninvolved_employee_cannot_see_the_task(self):
         alice = EmployeeFactory()
@@ -140,7 +137,7 @@ class TestAssignableEmployees:
         assert set(response.json()[0].keys()) == {"id", "employee_id", "name"}
 
     def test_unauthenticated_is_refused(self):
-        assert APIClient().get("/api/tasks/assignable-employees/").status_code == 403
+        assert APIClient().get("/api/tasks/assignable-employees/").status_code == 401
 
 
 # --- API: status transitions and lifecycle rules ---------------------------------

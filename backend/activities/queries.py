@@ -228,17 +228,24 @@ def build_timeline(sessions, window_start, window_end, now=None) -> dict:
 # --- ORM layer --------------------------------------------------------------
 
 
-def sessions_for_day(employee, day: dt.date, settings_obj=None):
+def sessions_for_day(employee, day: dt.date, settings_obj=None, device_type=None):
     """Every session overlapping one office-local day, open ones included.
 
     The filter is an overlap test, not a start-time test: a session that began before
     midnight is part of this day too, and dropping it would lose the first hours of an
     early shift.
+
+    `device_type` (PC/ANDROID, see computers.models.DeviceType) narrows to sessions from
+    that kind of device only — used to build the Activity page's separate PC and Phone
+    blocks without summing device types together (same "nothing sums across tracks that
+    run in parallel" rule above, just applied across devices instead of activity types).
     """
     window_start, window_end = day_window(day, settings_obj)
+    queryset = Activity.objects.filter(employee=employee)
+    if device_type is not None:
+        queryset = queryset.filter(computer__device_type=device_type)
     return list(
-        Activity.objects.filter(employee=employee)
-        .filter(start_time__lt=window_end)
+        queryset.filter(start_time__lt=window_end)
         # Open sessions have no end and therefore always qualify.
         .filter(Q(end_time__gte=window_start) | Q(end_time__isnull=True))
         .select_related("computer")
@@ -246,11 +253,11 @@ def sessions_for_day(employee, day: dt.date, settings_obj=None):
     )
 
 
-def activity_day(employee, day: dt.date, settings_obj=None, now=None) -> dict:
+def activity_day(employee, day: dt.date, settings_obj=None, now=None, device_type=None) -> dict:
     """Everything §22 needs for one employee on one day."""
     settings_obj = settings_obj or AppSettings.load()
     window_start, window_end = day_window(day, settings_obj)
-    sessions = sessions_for_day(employee, day, settings_obj)
+    sessions = sessions_for_day(employee, day, settings_obj, device_type=device_type)
 
     summary = summarise(sessions, window_start, window_end, now)
     summary["timeline"] = build_timeline(sessions, window_start, window_end, now)

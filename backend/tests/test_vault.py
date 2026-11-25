@@ -47,7 +47,7 @@ def client_for(employee):
 class TestVaultEntryIsolation:
     def test_unauthenticated_is_refused(self):
         entry = VaultEntryFactory()
-        assert APIClient().get(f"/api/vault-entries/{entry.pk}/").status_code == 403
+        assert APIClient().get(f"/api/vault-entries/{entry.pk}/").status_code == 401
 
     def test_an_uninvolved_employee_cannot_see_the_entry(self):
         alice = EmployeeFactory()
@@ -210,7 +210,7 @@ class TestReveal:
 
     def test_unauthenticated_is_refused(self):
         entry = VaultEntryFactory()
-        assert APIClient().post(f"/api/vault-entries/{entry.pk}/reveal/").status_code == 403
+        assert APIClient().post(f"/api/vault-entries/{entry.pk}/reveal/").status_code == 401
 
 
 # --- API: sharing and revoking -----------------------------------------------

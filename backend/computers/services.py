@@ -21,7 +21,14 @@ from django.utils import timezone
 from activities.models import Activity, ActivityType
 from attendance.models import AppSettings
 
-from .models import CLOSING_EVENTS, Computer, ComputerStatus, LifecycleEvent, normalise_code
+from .models import (
+    CLOSING_EVENTS,
+    Computer,
+    ComputerStatus,
+    DeviceType,
+    LifecycleEvent,
+    normalise_code,
+)
 
 # How many missed heartbeats before a machine counts as gone. Three is the smallest
 # number that tolerates one dropped request plus one slow one without flapping.
@@ -110,6 +117,52 @@ def register_device(
     return computer, token
 
 
+@transaction.atomic
+def get_or_create_mobile_device(
+    user,
+    *,
+    computer_name: str = "",
+    operating_system: str = "",
+    agent_version: str = "",
+) -> Computer:
+    """Find or create the one Android row for this user's own phone.
+
+    No enrollment code, unlike a PC: the employee's own login is the trust boundary, so
+    this is called from every mobile agent endpoint (register, heartbeat, sync, config),
+    not just once at setup — a reinstalled app finds its existing row instead of piling
+    up duplicates, which is what keeps the Computers admin page at one row per phone.
+    There is no device token for these rows; the caller already authenticated with the
+    user's own bearer token, so nothing else needs issuing.
+    """
+    employee = getattr(user, "employee", None)
+    if employee is None:
+        raise RegistrationError("This account is not linked to an employee record.")
+
+    computer, created = Computer.objects.select_for_update().get_or_create(
+        employee=employee,
+        device_type=DeviceType.ANDROID,
+        defaults={
+            "computer_name": computer_name or "Android phone",
+            "operating_system": operating_system,
+            "agent_version": agent_version,
+        },
+    )
+    if not created:
+        # Checked here, not just at the admin's disable action, so disabling actually
+        # stops a phone already mid-conversation with the server — same latency as a
+        # PC's cleared device token today.
+        if computer.status == ComputerStatus.DISABLED:
+            raise RegistrationError("This phone has been disabled by an administrator.")
+        if computer_name:
+            computer.computer_name = computer_name
+        computer.operating_system = operating_system or computer.operating_system
+        computer.agent_version = agent_version or computer.agent_version
+        computer.save(
+            update_fields=["computer_name", "operating_system", "agent_version", "updated_at"]
+        )
+    return computer
+
+
 # --- PC_ON sessions ---------------------------------------------------------
 
 
@@ -191,6 +244,24 @@ def record_heartbeat(
         computer.agent_version = agent_version
     computer.save(update_fields=["last_seen_at", "status", "agent_version", "updated_at"])
 
+    return agent_config_payload(computer=computer)
+
+
+def record_mobile_heartbeat(computer: Computer, *, agent_version: str = "", now=None) -> dict:
+    """Liveness only, deliberately not `record_heartbeat()`.
+
+    A phone has no PC_ON-style session to open or close — Android's own activity
+    (ACTIVE/IDLE/APPLICATION) sessions already say when it was in use, so this just
+    keeps `last_seen_at`/`status` current for the Computers admin page, the same
+    visibility a PC row gets, without the lock/sleep/shutdown lifecycle events that are
+    specific to how a PC reports its own power state.
+    """
+    now = now or timezone.now()
+    computer.last_seen_at = now
+    computer.status = ComputerStatus.ONLINE
+    if agent_version:
+        computer.agent_version = agent_version
+    computer.save(update_fields=["last_seen_at", "status", "agent_version", "updated_at"])
     return agent_config_payload(computer=computer)
 
 

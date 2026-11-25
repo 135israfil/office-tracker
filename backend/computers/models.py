@@ -67,6 +67,11 @@ class ComputerStatus(models.TextChoices):
     DISABLED = "DISABLED", "Disabled"
 
 
+class DeviceType(models.TextChoices):
+    PC = "PC", "PC"
+    ANDROID = "ANDROID", "Android"
+
+
 class LifecycleEvent(models.TextChoices):
     """PC lifecycle transitions the agent reports (§13, §34 system collector)."""
 
@@ -95,6 +100,7 @@ class Computer(models.Model):
         max_length=120,
         help_text="Machine name. Filled by the admin at enrolment and confirmed by the agent.",
     )
+    device_type = models.CharField(max_length=16, choices=DeviceType.choices, default=DeviceType.PC)
     operating_system = models.CharField(max_length=120, blank=True)
     agent_version = models.CharField(max_length=32, blank=True)
 

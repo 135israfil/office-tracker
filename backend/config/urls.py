@@ -15,6 +15,10 @@ from attendance.views import AppSettingsView, HolidayViewSet
 from computers.agent_views import (
     AgentConfigView,
     AgentHeartbeatView,
+    AgentMobileConfigView,
+    AgentMobileHeartbeatView,
+    AgentMobileRegisterView,
+    AgentMobileSyncView,
     AgentRegisterView,
     AgentScreenshotUploadView,
     AgentSyncView,
@@ -56,6 +60,20 @@ urlpatterns = [
     path("api/agent/sync/", AgentSyncView.as_view(), name="agent-sync"),
     path("api/agent/config/", AgentConfigView.as_view(), name="agent-config"),
     path("api/agent/screenshot/", AgentScreenshotUploadView.as_view(), name="agent-screenshot"),
+    # Mobile agent endpoints use the user's own bearer token, never a device token —
+    # the phone's login is the enrollment (see computers.services.get_or_create_mobile_device).
+    path(
+        "api/agent/mobile/register/",
+        AgentMobileRegisterView.as_view(),
+        name="agent-mobile-register",
+    ),
+    path(
+        "api/agent/mobile/heartbeat/",
+        AgentMobileHeartbeatView.as_view(),
+        name="agent-mobile-heartbeat",
+    ),
+    path("api/agent/mobile/sync/", AgentMobileSyncView.as_view(), name="agent-mobile-sync"),
+    path("api/agent/mobile/config/", AgentMobileConfigView.as_view(), name="agent-mobile-config"),
     path("api/activity/summary/", ActivitySummaryView.as_view(), name="activity-summary"),
     path("api/reports/", include("reports.urls")),
     # Listed before the router include: "tasks/<pk>/" would otherwise swallow this

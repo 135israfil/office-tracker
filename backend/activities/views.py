@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 from attendance.attendance_serializers import AttendanceSerializer
 from attendance.calendar_rules import local_date
 from attendance.models import AppSettings, Attendance
+from computers.models import Computer, DeviceType
 from employees.models import Employee
 
 from .models import Activity
@@ -113,6 +114,19 @@ class ActivitySummaryView(APIView):
             .first()
         )
 
+        # A separate block, not summed into "activity": someone active on their phone
+        # and their PC at the same moment would otherwise look like more time worked
+        # than actually passed. Only computed when the employee has a phone at all, so
+        # everyone else's payload is unchanged (phone_activity: null).
+        has_phone = Computer.objects.filter(
+            employee=employee, device_type=DeviceType.ANDROID
+        ).exists()
+        phone_activity = (
+            activity_day(employee, day, settings_obj, device_type=DeviceType.ANDROID)
+            if has_phone
+            else None
+        )
+
         return Response(
             {
                 "employee": {
@@ -128,6 +142,7 @@ class ActivitySummaryView(APIView):
                 # office-local terms, and the display has to agree with that.
                 "timezone": settings_obj.timezone,
                 "attendance": AttendanceSerializer(attendance).data if attendance else None,
-                "activity": activity_day(employee, day, settings_obj),
+                "activity": activity_day(employee, day, settings_obj, device_type=DeviceType.PC),
+                "phone_activity": phone_activity,
             }
         )

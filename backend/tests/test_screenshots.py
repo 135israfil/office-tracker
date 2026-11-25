@@ -40,7 +40,7 @@ def client_for(employee):
 class TestVisibility:
     def test_unauthenticated_is_refused(self):
         capture = ScreenshotCaptureFactory()
-        assert APIClient().get(f"/api/screenshots/{capture.pk}/").status_code == 403
+        assert APIClient().get(f"/api/screenshots/{capture.pk}/").status_code == 401
 
     def test_the_captured_employee_cannot_see_their_own_capture(self):
         # Deliberate: unlike every other feature in this codebase, the subject

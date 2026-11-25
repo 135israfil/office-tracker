@@ -199,6 +199,12 @@ STORAGES = {
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        # Bearer first: a native client (the Android app) never carries a session
+        # cookie, so trying session auth first would be a wasted lookup on every
+        # request it makes. Safe to be global, unlike computers.DeviceTokenAuthentication
+        # — a user's bearer token carries full user identity, exactly like their
+        # session does, so IsAdmin/IsAdminOrReadOnlySelf behave identically either way.
+        "accounts.authentication.BearerTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [

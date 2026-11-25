@@ -50,7 +50,7 @@ class TestNotifyService:
 @pytest.mark.django_db
 class TestVisibility:
     def test_unauthenticated_is_refused(self):
-        assert APIClient().get("/api/notifications/").status_code == 403
+        assert APIClient().get("/api/notifications/").status_code == 401
 
     def test_an_employee_sees_only_their_own_notifications(self):
         alice = EmployeeFactory()

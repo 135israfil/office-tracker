@@ -35,7 +35,7 @@ def client_for(employee):
 class TestEventVisibility:
     def test_unauthenticated_is_refused(self):
         event = EventFactory()
-        assert APIClient().get(f"/api/events/{event.pk}/").status_code == 403
+        assert APIClient().get(f"/api/events/{event.pk}/").status_code == 401
 
     def test_an_uninvolved_employee_cannot_see_an_unlocked_event(self):
         alice = EmployeeFactory()

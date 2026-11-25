@@ -5,9 +5,24 @@ exist is a painful manual migration, and this project knows it needs email login
 and a role field from day one (PLAN.md §2).
 """
 
+import hashlib
+import secrets
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+
+# 32 bytes of urlsafe randomness — same size and rationale as computers.models'
+# device token: 256 bits of entropy needs no slow KDF, just a lookup hash.
+TOKEN_BYTES = 32
+
+
+def generate_auth_token() -> str:
+    return secrets.token_urlsafe(TOKEN_BYTES)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
 
 
 class Role(models.TextChoices):
@@ -64,3 +79,27 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_admin(self):
         return self.role == Role.ADMIN
+
+
+class AuthToken(models.Model):
+    """A bearer credential for native clients (the Android app) that can't carry
+    session cookies the way a browser does.
+
+    Deliberately separate from `computers.Computer`'s device token: that one grants
+    "report this machine's activity" and belongs to a device; this one grants "act as
+    this person" and belongs to a user, the same thing their session already grants.
+    One user can hold several (web session + phone + a reinstall all coexist) — each
+    login mints its own, so logging out on one device never touches another's.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_tokens")
+    token_hash = models.CharField(max_length=64, unique=True)
+    label = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.email} ({self.label or 'token'})"
