@@ -16,8 +16,8 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from attendance.models import AppSettings
-from computers.models import Computer, ComputerStatus
-from computers.services import offline_after, sweep_offline_computers
+from computers.models import Computer, ComputerStatus, DeviceType
+from computers.services import _stale_filter, offline_after, sweep_offline_computers
 
 
 class Command(BaseCommand):
@@ -30,18 +30,21 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         settings_obj = AppSettings.load()
-        window = offline_after(settings_obj)
-        cutoff = timezone.now() - window
+        now = timezone.now()
 
         if options["dry_run"]:
             stale = Computer.objects.filter(
-                status__in=[ComputerStatus.ONLINE, ComputerStatus.IDLE],
-                last_seen_at__lt=cutoff,
-            )
+                status__in=[ComputerStatus.ONLINE, ComputerStatus.IDLE]
+            ).filter(_stale_filter(now, settings_obj))
             for computer in stale:
                 self.stdout.write(f"{computer.computer_name}: last seen {computer.last_seen_at}")
+            pc_window = offline_after(settings_obj, DeviceType.PC)
+            android_window = offline_after(settings_obj, DeviceType.ANDROID)
             self.stdout.write(
-                self.style.SUCCESS(f"[dry run] {stale.count()} computer(s) past {window}")
+                self.style.SUCCESS(
+                    f"[dry run] {stale.count()} computer(s) past their cutoff "
+                    f"(PC {pc_window}, Android {android_window})"
+                )
             )
             return
 
