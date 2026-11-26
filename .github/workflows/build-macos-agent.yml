@@ -37,35 +37,26 @@ jobs:
       - name: Install Python (Homebrew, for a non-broken Tcl/Tk)
         run: |
           # `brew link` commonly fails here because the runner image already has a
-          # python@3.12 symlinked into /usr/local/bin — harmless for us, since we
-          # reference the Cellar binary directly below rather than relying on PATH.
-          # The install itself (and this script's next line) is the real check.
+          # python@3.12 symlinked into /usr/local/bin — harmless for us, since
+          # everything below references this venv explicitly rather than PATH.
           brew install python-tk@3.12 || true
           "$(brew --prefix python@3.12)/bin/python3.12" -c \
             "import tkinter; print('Tcl/Tk', tkinter.Tcl().eval('info patchlevel'))"
+          # A venv, not --break-system-packages: Homebrew's python@3.12 ships no
+          # pip at all (PEP 668 "externally managed"), and even ensurepip's own
+          # internal install hits that same block. A venv is exempt from it by
+          # design and still resolves Tcl/Tk from the same base interpreter that
+          # created it, so PyInstaller bundles the identical, working Tcl/Tk.
+          "$(brew --prefix python@3.12)/bin/python3.12" -m venv .venv-build
 
       - name: Install dependencies
-        # Homebrew's python@3.12 formula ships no working pip at all (not even via
-        # the pip3.12 script it leaves behind, which points at internals that
-        # aren't installed) — it expects a venv or pipx instead. `ensurepip` sidesteps
-        # that: it is part of the standard library itself, bootstrapping pip from a
-        # wheel bundled inside Python, independent of whatever Homebrew did or didn't
-        # install alongside it.
-        # --break-system-packages: Homebrew's Python marks itself externally-managed
-        # (PEP 668) and refuses a bare `pip install` otherwise. A venv would be the
-        # usual answer, but PyInstaller needs to run as this exact interpreter to
-        # bundle the Tcl/Tk it resolves — a disposable CI runner is an acceptable
-        # place to install straight into it.
-        run: |
-          PY="$(brew --prefix python@3.12)/bin/python3.12"
-          "$PY" -m ensurepip
-          "$PY" -m pip install --break-system-packages -r requirements-dev.txt
+        run: .venv-build/bin/pip install -r requirements-dev.txt
 
       - name: Build
         # Invoked via bash rather than ./installer/build_macos.sh: this repo is
         # checked out on Windows, which does not track the executable bit, so the
         # file arrives at git without +x regardless of what's set locally.
-        run: PYTHON="$(brew --prefix python@3.12)/bin/python3.12" bash installer/build_macos.sh
+        run: PYTHON="$PWD/.venv-build/bin/python" bash installer/build_macos.sh
 
       - uses: actions/upload-artifact@v4
         with:
