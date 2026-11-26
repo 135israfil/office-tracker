@@ -45,13 +45,16 @@ jobs:
             "import tkinter; print('Tcl/Tk', tkinter.Tcl().eval('info patchlevel'))"
 
       - name: Install dependencies
+        # pip3.12 directly, not `python3.12 -m pip`: Homebrew's Python formula strips
+        # pip/__main__.py (it wants you to use a venv or pipx), which breaks -m pip
+        # specifically while the pip3.12 console script still works fine.
         # --break-system-packages: Homebrew's Python marks itself externally-managed
         # (PEP 668) and refuses a bare `pip install` otherwise. A venv would be the
         # usual answer, but PyInstaller needs to run as this exact interpreter to
         # bundle the Tcl/Tk it resolves — a disposable CI runner is an acceptable
         # place to install straight into it.
         run: >-
-          "$(brew --prefix python@3.12)/bin/python3.12" -m pip install
+          "$(brew --prefix python@3.12)/bin/pip3.12" install
           --break-system-packages -r requirements-dev.txt
 
       - name: Build
