@@ -36,7 +36,11 @@ jobs:
       # exactly this), so PyInstaller bundles a Tcl/Tk that actually works.
       - name: Install Python (Homebrew, for a non-broken Tcl/Tk)
         run: |
-          brew install python-tk@3.12
+          # `brew link` commonly fails here because the runner image already has a
+          # python@3.12 symlinked into /usr/local/bin — harmless for us, since we
+          # reference the Cellar binary directly below rather than relying on PATH.
+          # The install itself (and this script's next line) is the real check.
+          brew install python-tk@3.12 || true
           "$(brew --prefix python@3.12)/bin/python3.12" -c \
             "import tkinter; print('Tcl/Tk', tkinter.Tcl().eval('info patchlevel'))"
 
