@@ -162,6 +162,14 @@ defineProps({
       <path d="M6 10.5a6 6 0 0 1 12 0c0 4 1.5 5.5 2 6.5H4c.5-1 2-2.5 2-6.5Z" />
       <path d="M10 19.5a2 2 0 0 0 4 0" />
     </template>
+
+    <template v-else-if="name === 'menu'">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </template>
+
+    <template v-else-if="name === 'x'">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </template>
   </svg>
 </template>
 

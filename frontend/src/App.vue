@@ -109,6 +109,10 @@ async function signOut() {
   await auth.logout();
   router.push({ name: "login" });
 }
+
+// Mobile only (see the >=60rem media query below) — on desktop the nav is
+// always visible and this stays false/unused.
+const navOpen = ref(false);
 </script>
 
 <template>
@@ -116,13 +120,27 @@ async function signOut() {
     <aside
       v-if="auth.isAuthenticated"
       class="sidebar"
+      :class="{ 'sidebar--nav-open': navOpen }"
     >
       <div class="brand">
         <span class="brand__mark">OM</span>
         <span class="brand__text">Office</span>
       </div>
 
-      <nav class="sidebar__nav">
+      <button
+        class="hamburger"
+        type="button"
+        :aria-expanded="navOpen"
+        aria-label="Toggle navigation menu"
+        @click="navOpen = !navOpen"
+      >
+        <NavIcon :name="navOpen ? 'x' : 'menu'" />
+      </button>
+
+      <nav
+        class="sidebar__nav"
+        @click="navOpen = false"
+      >
         <RouterLink
           v-for="link in links"
           :key="link.to"
@@ -798,12 +816,33 @@ td .error,
   }
 }
 
-/* Below this width the sidebar becomes a bar across the top. The nav itself
-   wraps onto as many rows as it needs: an admin has 12 links, which a
-   horizontal scroller left almost entirely hidden with no visible scrollbar
-   to hint more existed (confirmed: ~1.5 links visible out of 12, same on
-   every page). Wrapping costs vertical space but needs no gesture nobody is
-   told about and no drawer state/scrim to build instead. */
+/* Hidden on desktop; the mobile media query below turns it into a visible
+   toggle for the nav list, which is hidden there until opened. */
+.hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+}
+.hamburger:hover {
+  background: var(--surface-sunken);
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+/* Below this width the sidebar becomes a bar across the top: brand, a
+   hamburger toggle, then the signed-in user and sign out. An admin has 12
+   nav links — too many to wrap inline here without pushing the page content
+   far down on every screen, so instead the hamburger opens them as a plain
+   vertical list (scrollable if it runs long), all of them visible at once
+   rather than a handful of links in a cramped horizontal scroller. */
 @media (max-width: 60rem) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
@@ -827,15 +866,29 @@ td .error,
   .brand__text {
     display: none;
   }
+  .hamburger {
+    display: inline-flex;
+    order: 2;
+  }
   .sidebar__nav {
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: none;
+    flex-direction: column;
     flex: 1 1 100%;
-    order: 3;
-    gap: 0.25rem;
+    order: 4;
+    gap: 0.1rem;
+    max-height: 60vh;
+    overflow-y: auto;
+    margin-top: 0.3rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .sidebar--nav-open .sidebar__nav {
+    display: flex;
   }
   .sidebar__foot {
+    order: 1;
     margin-top: 0;
+    margin-left: auto;
     padding-top: 0;
     border-top: none;
     display: flex;
