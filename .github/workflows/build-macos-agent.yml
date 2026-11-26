@@ -58,7 +58,7 @@ jobs:
         # place to install straight into it.
         run: |
           PY="$(brew --prefix python@3.12)/bin/python3.12"
-          "$PY" -m ensurepip --break-system-packages
+          "$PY" -m ensurepip
           "$PY" -m pip install --break-system-packages -r requirements-dev.txt
 
       - name: Build
