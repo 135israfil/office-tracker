@@ -27,18 +27,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      # Not actions/setup-python: its macOS Python builds bundle an old Tcl/Tk whose
+      # Aqua color code calls a private AppKit selector newer macOS versions have
+      # removed, aborting the whole process (SIGABRT, uncatchable from Python) the
+      # instant tkinter creates its first window — confirmed on a real machine
+      # running macOS 26. Homebrew's python-tk formula pulls in Homebrew's own
+      # actively-maintained tcl-tk (>= 8.6.14, which carries the upstream fix for
+      # exactly this), so PyInstaller bundles a Tcl/Tk that actually works.
+      - name: Install Python (Homebrew, for a non-broken Tcl/Tk)
+        run: |
+          brew install python-tk@3.12
+          "$(brew --prefix python@3.12)/bin/python3.12" -c \
+            "import tkinter; print('Tcl/Tk', tkinter.Tcl().eval('info patchlevel'))"
 
       - name: Install dependencies
-        run: python3 -m pip install -r requirements-dev.txt
+        # --break-system-packages: Homebrew's Python marks itself externally-managed
+        # (PEP 668) and refuses a bare `pip install` otherwise. A venv would be the
+        # usual answer, but PyInstaller needs to run as this exact interpreter to
+        # bundle the Tcl/Tk it resolves — a disposable CI runner is an acceptable
+        # place to install straight into it.
+        run: >-
+          "$(brew --prefix python@3.12)/bin/python3.12" -m pip install
+          --break-system-packages -r requirements-dev.txt
 
       - name: Build
         # Invoked via bash rather than ./installer/build_macos.sh: this repo is
         # checked out on Windows, which does not track the executable bit, so the
         # file arrives at git without +x regardless of what's set locally.
-        run: bash installer/build_macos.sh
+        run: PYTHON="$(brew --prefix python@3.12)/bin/python3.12" bash installer/build_macos.sh
 
       - uses: actions/upload-artifact@v4
         with:
