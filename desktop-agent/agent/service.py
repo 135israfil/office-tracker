@@ -276,7 +276,12 @@ class AgentService:
 
     def run_sampler(self):
         while not self._stop.is_set():
-            self.sample_once()
+            try:
+                self.sample_once()
+            except Exception:
+                # Same independence as every other loop: a local write failure (full
+                # disk, locked file) must not permanently stop collection.
+                log.exception("Sampler cycle failed; continuing")
             self._sleep(SAMPLE_INTERVAL_SECONDS)
         # Whatever is open at shutdown ends now; it is real time that was observed.
         self._enqueue(self.builder.flush(self.clock()))
@@ -349,21 +354,26 @@ class AgentService:
         while not self._stop.is_set():
             delay = self.config.sync_interval_seconds
             if self.is_registered:
-                with self._sync_lock:
-                    result = self.sync_service.drain()
-                if result["uploaded"] or result["rejected"]:
-                    log.info(
-                        "Synced %s session(s), %s duplicate(s), %s rejected, %s pending",
-                        result["uploaded"],
-                        result["duplicates"],
-                        result["rejected"],
-                        result["pending"],
-                    )
-                if result["uploaded"] or result["duplicates"]:
-                    # Only when something was actually confirmed: that is the only way
-                    # new synced rows appear.
-                    self.queue.purge_synced()
-                delay = self.sync_service.next_delay(self.config.sync_interval_seconds)
+                try:
+                    with self._sync_lock:
+                        result = self.sync_service.drain()
+                    if result["uploaded"] or result["rejected"]:
+                        log.info(
+                            "Synced %s session(s), %s duplicate(s), %s rejected, %s pending",
+                            result["uploaded"],
+                            result["duplicates"],
+                            result["rejected"],
+                            result["pending"],
+                        )
+                    if result["uploaded"] or result["duplicates"]:
+                        # Only when something was actually confirmed: that is the only
+                        # way new synced rows appear.
+                        self.queue.purge_synced()
+                    delay = self.sync_service.next_delay(self.config.sync_interval_seconds)
+                except Exception:
+                    # Same independence as every other loop: a bad server reply or a
+                    # local queue error must not permanently stop syncing.
+                    log.exception("Sync cycle failed; continuing")
             self._sleep(delay)
 
     def sync_now(self) -> dict:
@@ -421,6 +431,11 @@ class AgentService:
                     self.consecutive_failures,
                     delay,
                 )
+            except Exception:
+                # A surprise here (e.g. a malformed server reply) must not kill the
+                # one loop that proves the machine is still alive.
+                delay = backoff_seconds(min(self.consecutive_failures, 6))
+                log.exception("Heartbeat loop hit an unexpected error; continuing")
             self._sleep(delay)
         log.info("Agent stopped")
 

@@ -130,9 +130,12 @@ class AgentClient:
         if response.status_code == 204 or not response.content:
             return {}
         try:
-            return response.json()
+            result = response.json()
         except ValueError as exc:
             raise AgentApiError(f"{method} {path} returned a non-JSON body") from exc
+        # Callers do result.get(...) unconditionally; a 200 with valid JSON that is not
+        # an object (e.g. a bare list) must not raise AttributeError deep in a loop.
+        return result if isinstance(result, dict) else {}
 
     # --- Endpoints ---------------------------------------------------------
 
